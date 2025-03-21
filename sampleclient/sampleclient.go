@@ -7,9 +7,9 @@ import (
 
 	"github.com/grailbio/go-dicom"
 	"github.com/grailbio/go-dicom/dicomtag"
-	"github.com/grailbio/go-netdicom"
-	"github.com/grailbio/go-netdicom/dimse"
-	"github.com/grailbio/go-netdicom/sopclass"
+	"github.com/mlibanori/go-netdicom"
+	"github.com/mlibanori/go-netdicom/dimse"
+	"github.com/mlibanori/go-netdicom/sopclass"
 )
 
 var (

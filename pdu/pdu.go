@@ -19,14 +19,13 @@ import (
 	"github.com/grailbio/go-dicom/dicomio"
 )
 
+const CurrentProtocolVersion uint16 = 1
+
 // PDU is the interface for DUL messages like A-ASSOCIATE-AC, P-DATA-TF.
 type PDU interface {
 	fmt.Stringer
-
-	// WritePayload encodes the PDU payload. The "payload" here excludes the
-	// first 6 bytes that are common to all PDU types - they are encoded in
-	// EncodePDU separately.
-	WritePayload(*dicomio.Encoder)
+	Write() ([]byte, error)
+	Read(*dicomio.Decoder) PDU
 }
 
 // Type defines type of the PDU packet.
@@ -34,12 +33,12 @@ type Type byte
 
 const (
 	TypeAAssociateRq Type = 1 // A_ASSOCIATE_RQ
-	TypeAAssociateAc      = 2 // A_ASSOCIATE_AC
-	TypeAAssociateRj      = 3 // A_ASSOCIATE_RJ
-	TypePDataTf           = 4 // P_DATA_TF
-	TypeAReleaseRq        = 5 // A_RELEASE_RQ
-	TypeAReleaseRp        = 6 // A_RELEASE_RP
-	TypeAAbort            = 7 // A_ABORT
+	TypeAAssociateAc Type = 2 // A_ASSOCIATE_AC
+	TypeAAssociateRj Type = 3 // A_ASSOCIATE_RJ
+	TypePDataTf      Type = 4 // P_DATA_TF
+	TypeAReleaseRq   Type = 5 // A_RELEASE_RQ
+	TypeAReleaseRp   Type = 6 // A_RELEASE_RP
+	TypeAAbort       Type = 7 // A_ABORT
 )
 
 // SubItem is the interface for DUL items, such as ApplicationContextItem and
@@ -445,9 +444,11 @@ func (v *PresentationDataValueItem) String() string {
 // EncodePDU serializes "pdu" into []byte.
 func EncodePDU(pdu PDU) ([]byte, error) {
 	var pduType Type
-	switch n := pdu.(type) {
-	case *AAssociate:
-		pduType = n.Type
+	switch pdu.(type) {
+	case *AAssociateRQ:
+		pduType = TypeAAssociateRq
+	case *AAssociateAC:
+		pduType = TypeAAssociateAc
 	case *AAssociateRj:
 		pduType = TypeAAssociateRj
 	case *PDataTf:
@@ -461,12 +462,10 @@ func EncodePDU(pdu PDU) ([]byte, error) {
 	default:
 		panic(fmt.Sprintf("Unknown PDU %v", pdu))
 	}
-	e := dicomio.NewBytesEncoder(binary.BigEndian, dicomio.UnknownVR)
-	pdu.WritePayload(e)
-	if err := e.Error(); err != nil {
+	payload, err := pdu.Write()
+	if err != nil {
 		return nil, err
 	}
-	payload := e.Bytes()
 	// Reserve the header bytes. It will be filled in Finish.
 	var header [6]byte // First 6 bytes of buf.
 	header[0] = byte(pduType)
@@ -504,19 +503,19 @@ func ReadPDU(in io.Reader, maxPDUSize int) (PDU, error) {
 	var pdu PDU
 	switch pduType {
 	case TypeAAssociateRq:
-		fallthrough
+		pdu = AAssociateRQ{}.Read(d)
 	case TypeAAssociateAc:
-		pdu = decodeAAssociate(d, pduType)
+		pdu = AAssociateAC{}.Read(d)
 	case TypeAAssociateRj:
-		pdu = decodeAAssociateRj(d)
+		pdu = AAssociateRj{}.Read(d)
 	case TypeAAbort:
-		pdu = decodeAAbort(d)
+		pdu = AAbort{}.Read(d)
 	case TypePDataTf:
-		pdu = decodePDataTf(d)
+		pdu = PDataTf{}.Read(d)
 	case TypeAReleaseRq:
-		pdu = decodeAReleaseRq(d)
+		pdu = AReleaseRq{}.Read(d)
 	case TypeAReleaseRp:
-		pdu = decodeAReleaseRp(d)
+		pdu = AReleaseRp{}.Read(d)
 	}
 	if pdu == nil {
 		err := fmt.Errorf("ReadPDU: unknown message type %d", pduType)
@@ -526,40 +525,6 @@ func ReadPDU(in io.Reader, maxPDUSize int) (PDU, error) {
 		return nil, err
 	}
 	return pdu, nil
-}
-
-type AReleaseRq struct {
-}
-
-func decodeAReleaseRq(d *dicomio.Decoder) *AReleaseRq {
-	pdu := &AReleaseRq{}
-	d.Skip(4)
-	return pdu
-}
-
-func (pdu *AReleaseRq) WritePayload(e *dicomio.Encoder) {
-	e.WriteZeros(4)
-}
-
-func (pdu *AReleaseRq) String() string {
-	return fmt.Sprintf("A_RELEASE_RQ(%v)", *pdu)
-}
-
-type AReleaseRp struct {
-}
-
-func decodeAReleaseRp(d *dicomio.Decoder) *AReleaseRp {
-	pdu := &AReleaseRp{}
-	d.Skip(4)
-	return pdu
-}
-
-func (pdu *AReleaseRp) WritePayload(e *dicomio.Encoder) {
-	e.WriteZeros(4)
-}
-
-func (pdu *AReleaseRp) String() string {
-	return fmt.Sprintf("A_RELEASE_RP(%v)", *pdu)
 }
 
 func subItemListString(items []SubItem) string {
@@ -572,185 +537,6 @@ func subItemListString(items []SubItem) string {
 		buf.WriteString(subitem.String())
 	}
 	buf.WriteString("]")
-	return buf.String()
-}
-
-const CurrentProtocolVersion uint16 = 1
-
-// Defines A_ASSOCIATE_{RQ,AC}. P3.8 9.3.2 and 9.3.3
-type AAssociate struct {
-	Type            Type // One of {TypeA_Associate_RQ,TypeA_Associate_AC}
-	ProtocolVersion uint16
-	// Reserved uint16
-	CalledAETitle  string // For .._AC, the value is copied from A_ASSOCIATE_RQ
-	CallingAETitle string // For .._AC, the value is copied from A_ASSOCIATE_RQ
-	Items          []SubItem
-}
-
-func decodeAAssociate(d *dicomio.Decoder, pduType Type) *AAssociate {
-	pdu := &AAssociate{}
-	pdu.Type = pduType
-	pdu.ProtocolVersion = d.ReadUInt16()
-	d.Skip(2) // Reserved
-	pdu.CalledAETitle = d.ReadString(16)
-	pdu.CallingAETitle = d.ReadString(16)
-	d.Skip(8 * 4)
-	for !d.EOF() {
-		item := decodeSubItem(d)
-		if d.Error() != nil {
-			break
-		}
-		pdu.Items = append(pdu.Items, item)
-	}
-	if pdu.CalledAETitle == "" || pdu.CallingAETitle == "" {
-		d.SetError(fmt.Errorf("A_ASSOCIATE.{Called,Calling}AETitle must not be empty, in %v", pdu.String()))
-	}
-	return pdu
-}
-
-func (pdu *AAssociate) WritePayload(e *dicomio.Encoder) {
-	if pdu.Type == 0 || pdu.CalledAETitle == "" || pdu.CallingAETitle == "" {
-		panic(*pdu)
-	}
-	e.WriteUInt16(pdu.ProtocolVersion)
-	e.WriteZeros(2) // Reserved
-	e.WriteString(fillString(pdu.CalledAETitle, 16))
-	e.WriteString(fillString(pdu.CallingAETitle, 16))
-	e.WriteZeros(8 * 4)
-	for _, item := range pdu.Items {
-		item.Write(e)
-	}
-}
-
-func (pdu *AAssociate) String() string {
-	name := "AC"
-	if pdu.Type == TypeAAssociateRq {
-		name = "RQ"
-	}
-	return fmt.Sprintf("A_ASSOCIATE_%s{version:%v called:'%v' calling:'%v' items:%s}",
-		name, pdu.ProtocolVersion,
-		pdu.CalledAETitle, pdu.CallingAETitle, subItemListString(pdu.Items))
-}
-
-// P3.8 9.3.4
-type AAssociateRj struct {
-	Result RejectResultType
-	Source SourceType
-	Reason RejectReasonType
-}
-
-// Possible values for AAssociateRj.Result
-type RejectResultType byte
-
-const (
-	ResultRejectedPermanent RejectResultType = 1
-	ResultRejectedTransient RejectResultType = 2
-)
-
-// Possible values for AAssociateRj.Reason
-type RejectReasonType byte
-
-const (
-	RejectReasonNone                               RejectReasonType = 1
-	RejectReasonApplicationContextNameNotSupported RejectReasonType = 2
-	RejectReasonCallingAETitleNotRecognized        RejectReasonType = 3
-	RejectReasonCalledAETitleNotRecognized         RejectReasonType = 7
-)
-
-// Possible values for AAssociateRj.Source
-type SourceType byte
-
-const (
-	SourceULServiceUser                 SourceType = 1
-	SourceULServiceProviderACSE         SourceType = 2
-	SourceULServiceProviderPresentation SourceType = 3
-)
-
-func decodeAAssociateRj(d *dicomio.Decoder) *AAssociateRj {
-	pdu := &AAssociateRj{}
-	d.Skip(1) // reserved
-	pdu.Result = RejectResultType(d.ReadByte())
-	pdu.Source = SourceType(d.ReadByte())
-	pdu.Reason = RejectReasonType(d.ReadByte())
-	return pdu
-}
-
-func (pdu *AAssociateRj) WritePayload(e *dicomio.Encoder) {
-	e.WriteZeros(1)
-	e.WriteByte(byte(pdu.Result))
-	e.WriteByte(byte(pdu.Source))
-	e.WriteByte(byte(pdu.Reason))
-}
-
-func (pdu *AAssociateRj) String() string {
-	return fmt.Sprintf("A_ASSOCIATE_RJ{result: %v, source: %v, reason: %v}", pdu.Result, pdu.Source, pdu.Reason)
-}
-
-type AbortReasonType byte
-
-const (
-	AbortReasonNotSpecified             AbortReasonType = 0
-	AbortReasonUnexpectedPDU            AbortReasonType = 2
-	AbortReasonUnrecognizedPDUParameter AbortReasonType = 3
-	AbortReasonUnexpectedPDUParameter   AbortReasonType = 4
-	AbortReasonInvalidPDUParameterValue AbortReasonType = 5
-)
-
-type AAbort struct {
-	Source SourceType
-	Reason AbortReasonType
-}
-
-func decodeAAbort(d *dicomio.Decoder) *AAbort {
-	pdu := &AAbort{}
-	d.Skip(2)
-	pdu.Source = SourceType(d.ReadByte())
-	pdu.Reason = AbortReasonType(d.ReadByte())
-	return pdu
-}
-
-func (pdu *AAbort) WritePayload(e *dicomio.Encoder) {
-	e.WriteZeros(2)
-	e.WriteByte(byte(pdu.Source))
-	e.WriteByte(byte(pdu.Reason))
-}
-
-func (pdu *AAbort) String() string {
-	return fmt.Sprintf("A_ABORT{source:%v reason:%v}", pdu.Source, pdu.Reason)
-}
-
-type PDataTf struct {
-	Items []PresentationDataValueItem
-}
-
-func decodePDataTf(d *dicomio.Decoder) *PDataTf {
-	pdu := &PDataTf{}
-	for !d.EOF() {
-		item := ReadPresentationDataValueItem(d)
-		if d.Error() != nil {
-			break
-		}
-		pdu.Items = append(pdu.Items, item)
-	}
-	return pdu
-}
-
-func (pdu *PDataTf) WritePayload(e *dicomio.Encoder) {
-	for _, item := range pdu.Items {
-		item.Write(e)
-	}
-}
-
-func (pdu *PDataTf) String() string {
-	buf := bytes.Buffer{}
-	buf.WriteString(fmt.Sprintf("P_DATA_TF{items: ["))
-	for i, item := range pdu.Items {
-		if i > 0 {
-			buf.WriteString("\n")
-		}
-		buf.WriteString(item.String())
-	}
-	buf.WriteString("]}")
 	return buf.String()
 }
 

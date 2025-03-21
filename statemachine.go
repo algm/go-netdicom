@@ -13,8 +13,8 @@ import (
 	"github.com/grailbio/go-dicom/dicomio"
 	"github.com/grailbio/go-dicom/dicomlog"
 	"github.com/grailbio/go-dicom/dicomuid"
-	"github.com/grailbio/go-netdicom/dimse"
-	"github.com/grailbio/go-netdicom/pdu"
+	"github.com/mlibanori/go-netdicom/dimse"
+	"github.com/mlibanori/go-netdicom/pdu"
 )
 
 type stateType int
@@ -165,8 +165,7 @@ var actionAe2 = &stateAction{"AE-2", "Connection established on the user side. S
 		items := sm.contextManager.generateAssociateRequest(
 			sm.userParams.SOPClasses,
 			sm.userParams.TransferSyntaxes)
-		pdu := &pdu.AAssociate{
-			Type:            pdu.TypeAAssociateRq,
+		pdu := &pdu.AAssociateRQ{
 			ProtocolVersion: pdu.CurrentProtocolVersion,
 			CalledAETitle:   sm.userParams.CalledAETitle,
 			CallingAETitle:  sm.userParams.CallingAETitle,
@@ -180,8 +179,7 @@ var actionAe2 = &stateAction{"AE-2", "Connection established on the user side. S
 var actionAe3 = &stateAction{"AE-3", "Issue A-ASSOCIATE confirmation (accept) primitive",
 	func(sm *stateMachine, event stateEvent) stateType {
 		stopTimer(sm)
-		v := event.pdu.(*pdu.AAssociate)
-		doassert(v.Type == pdu.TypeAAssociateAc)
+		v := event.pdu.(*pdu.AAssociateAC)
 		err := sm.contextManager.onAssociateResponse(v.Items)
 		if err == nil {
 			sm.upcallCh <- upcallEvent{
@@ -225,7 +223,7 @@ service-dul: issue A-ASSOCIATE indication primitive
 otherwise issue A-ASSOCIATE-RJ-PDU and start ARTIM timer`,
 	func(sm *stateMachine, event stateEvent) stateType {
 		stopTimer(sm)
-		v := event.pdu.(*pdu.AAssociate)
+		v := event.pdu.(*pdu.AAssociateRQ)
 		if v.ProtocolVersion != 0x0001 {
 			dicomlog.Vprintf(0, "dicom.stateMachine(%s): Wrong remote protocol version 0x%x", sm.label, v.ProtocolVersion)
 			rj := pdu.AAssociateRj{Result: 1, Source: 2, Reason: 2}
@@ -250,8 +248,7 @@ otherwise issue A-ASSOCIATE-RJ-PDU and start ARTIM timer`,
 			doassert(v.CallingAETitle != "")
 			sm.downcallCh <- stateEvent{
 				event: evt07,
-				pdu: &pdu.AAssociate{
-					Type:            pdu.TypeAAssociateAc,
+				pdu: &pdu.AAssociateAC{
 					ProtocolVersion: pdu.CurrentProtocolVersion,
 					CalledAETitle:   v.CalledAETitle,
 					CallingAETitle:  v.CallingAETitle,
@@ -263,7 +260,7 @@ otherwise issue A-ASSOCIATE-RJ-PDU and start ARTIM timer`,
 	}}
 var actionAe7 = &stateAction{"AE-7", "Send A-ASSOCIATE-AC PDU",
 	func(sm *stateMachine, event stateEvent) stateType {
-		sendPDU(sm, event.pdu.(*pdu.AAssociate))
+		sendPDU(sm, event.pdu.(*pdu.AAssociateAC))
 		sm.upcallCh <- upcallEvent{
 			eventType: upcallEventHandshakeCompleted,
 			cm:        sm.contextManager,
@@ -829,13 +826,11 @@ func networkReaderThread(ch chan stateEvent, conn net.Conn, maxPDUSize int, smNa
 		doassert(v != nil)
 		dicomlog.Vprintf(2, "dicom.StateMachine %s: read PDU: %v", smName, v.String())
 		switch n := v.(type) {
-		case *pdu.AAssociate:
-			if n.Type == pdu.TypeAAssociateRq {
-				ch <- stateEvent{event: evt06, pdu: n, err: nil}
-			} else {
-				doassert(n.Type == pdu.TypeAAssociateAc)
-				ch <- stateEvent{event: evt03, pdu: n, err: nil}
-			}
+		case *pdu.AAssociateRQ:
+			ch <- stateEvent{event: evt06, pdu: n, err: nil}
+			continue
+		case *pdu.AAssociateAC:
+			ch <- stateEvent{event: evt03, pdu: n, err: nil}
 			continue
 		case *pdu.AAssociateRj:
 			dicomlog.Vprintf(0, "dicom.StateMachine %s: Association rejected: %v", smName, v.String())
