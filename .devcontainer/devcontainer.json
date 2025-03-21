@@ -17,7 +17,7 @@
       "plugins": "git git-flow F-Sy-H zsh-autosuggestions zsh-completions",
       "omzPlugins": "https://github.com/z-shell/F-Sy-H https://github.com/zsh-users/zsh-autosuggestions https://github.com/zsh-users/zsh-completions"
     },
-    "ghcr.io/stuartleeks/dev-container-features/shell-history:0": {},
+    "ghcr.io/stuartleeks/dev-container-features/shell-history:0": {}
   },
   "customizations": {
     // Configure properties specific to VS Code.
@@ -28,6 +28,7 @@
         "helgardrichard.helium-icon-theme",
         "GitHub.github-vscode-theme",
         "eamodio.gitlens",
+        "golang.go"
       ],
       "settings": {
         "workbench.iconTheme": "helium-icon-theme",
