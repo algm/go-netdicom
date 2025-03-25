@@ -1,5 +1,6 @@
 package pdu
 
+//go:generate stringer -type AbortReasonType
 import (
 	"fmt"
 

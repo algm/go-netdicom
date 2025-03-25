@@ -43,8 +43,8 @@ func (pdu *AAssociateRQ) Write() ([]byte, error) {
 	}
 	e.WriteUInt16(pdu.ProtocolVersion)
 	e.WriteZeros(2) // Reserved
-	e.WriteString(fillString(pdu.CalledAETitle, 16))
-	e.WriteString(fillString(pdu.CallingAETitle, 16))
+	e.WriteString(fillString(pdu.CalledAETitle))
+	e.WriteString(fillString(pdu.CallingAETitle))
 	e.WriteZeros(8 * 4)
 	for _, item := range pdu.Items {
 		item.Write(e)

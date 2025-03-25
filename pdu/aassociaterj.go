@@ -1,5 +1,8 @@
 package pdu
 
+//go:generate stringer -type RejectReasonType
+//go:generate stringer -type RejectResultType
+//go:generate stringer -type SourceType
 import (
 	"fmt"
 
