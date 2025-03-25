@@ -1,4 +1,4 @@
-package pdu
+package pdu_item
 
 import (
 	"fmt"

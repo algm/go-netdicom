@@ -1,4 +1,4 @@
-package pdu
+package pdu_item
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 type ImplementationClassUIDSubItem subItemWithName
 
 func decodeImplementationClassUIDSubItem(d *dicomio.Decoder, length uint16) *ImplementationClassUIDSubItem {
-	return &ImplementationClassUIDSubItem{Name: decodeSubItemWithName(d, length)}
+	return &ImplementationClassUIDSubItem{Name: DecodeSubItemWithName(d, length)}
 }
 
 func (v *ImplementationClassUIDSubItem) Write(e *dicomio.Encoder) {

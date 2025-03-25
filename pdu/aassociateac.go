@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/grailbio/go-dicom/dicomio"
+	"github.com/mlibanori/go-netdicom/pdu/pdu_item"
 )
 
 // Defines A_ASSOCIATE_AC. P3.8 9.3.2 and 9.3.3
@@ -13,7 +14,7 @@ type AAssociateAC struct {
 	// Reserved uint16
 	CalledAETitle  string // For .._AC, the value is copied from A_ASSOCIATE_RQ
 	CallingAETitle string // For .._AC, the value is copied from A_ASSOCIATE_RQ
-	Items          []SubItem
+	Items          []pdu_item.SubItem
 }
 
 func (AAssociateAC) Read(d *dicomio.Decoder) PDU {
@@ -24,7 +25,7 @@ func (AAssociateAC) Read(d *dicomio.Decoder) PDU {
 	pdu.CallingAETitle = d.ReadString(16)
 	d.Skip(8 * 4)
 	for !d.EOF() {
-		item := decodeSubItem(d)
+		item := pdu_item.DecodeSubItem(d)
 		if d.Error() != nil {
 			break
 		}
@@ -55,5 +56,5 @@ func (pdu *AAssociateAC) Write() ([]byte, error) {
 func (pdu *AAssociateAC) String() string {
 	return fmt.Sprintf("A_ASSOCIATE_AC{version:%v called:'%v' calling:'%v' items:%s}",
 		pdu.ProtocolVersion,
-		pdu.CalledAETitle, pdu.CallingAETitle, subItemListString(pdu.Items))
+		pdu.CalledAETitle, pdu.CallingAETitle, pdu_item.SubItemListString(pdu.Items))
 }

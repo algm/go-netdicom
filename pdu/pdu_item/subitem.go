@@ -1,4 +1,4 @@
-package pdu
+package pdu_item
 
 import (
 	"bytes"
@@ -31,7 +31,7 @@ const (
 	ItemTypeImplementationVersionName    = 0x55
 )
 
-func decodeSubItem(d *dicomio.Decoder) SubItem {
+func DecodeSubItem(d *dicomio.Decoder) SubItem {
 	itemType := d.ReadByte()
 	d.Skip(1)
 	length := d.ReadUInt16()
@@ -70,7 +70,7 @@ func encodeSubItemHeader(e *dicomio.Encoder, itemType byte, length uint16) {
 	e.WriteUInt16(length)
 }
 
-func subItemListString(items []SubItem) string {
+func SubItemListString(items []SubItem) string {
 	buf := bytes.Buffer{}
 	buf.WriteString("[")
 	for i, subitem := range items {
@@ -94,7 +94,7 @@ func encodeSubItemWithName(e *dicomio.Encoder, itemType byte, name string) {
 	e.WriteBytes([]byte(name))
 }
 
-func decodeSubItemWithName(d *dicomio.Decoder, length uint16) string {
+func DecodeSubItemWithName(d *dicomio.Decoder, length uint16) string {
 	return d.ReadString(int(length))
 }
 

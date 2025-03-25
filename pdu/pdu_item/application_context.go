@@ -1,4 +1,4 @@
-package pdu
+package pdu_item
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ type ApplicationContextItem subItemWithName
 const DICOMApplicationContextItemName = "1.2.840.10008.3.1.1.1"
 
 func decodeApplicationContextItem(d *dicomio.Decoder, length uint16) *ApplicationContextItem {
-	return &ApplicationContextItem{Name: decodeSubItemWithName(d, length)}
+	return &ApplicationContextItem{Name: DecodeSubItemWithName(d, length)}
 }
 
 func (v *ApplicationContextItem) Write(e *dicomio.Encoder) {

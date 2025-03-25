@@ -1,4 +1,4 @@
-package pdu
+package pdu_item
 
 //go:generate stringer -type PresentationContextResult
 
@@ -43,7 +43,7 @@ func decodePresentationContextItem(d *dicomio.Decoder, itemType byte, length uin
 	v.Result = PresentationContextResult(d.ReadByte())
 	d.Skip(1)
 	for !d.EOF() {
-		item := decodeSubItem(d)
+		item := DecodeSubItem(d)
 		if d.Error() != nil {
 			break
 		}
@@ -82,5 +82,5 @@ func (v *PresentationContextItem) String() string {
 		itemType = "ac"
 	}
 	return fmt.Sprintf("PresentationContext%s{id: %d result: %d, items:%s}",
-		itemType, v.ContextID, v.Result, subItemListString(v.Items))
+		itemType, v.ContextID, v.Result, SubItemListString(v.Items))
 }

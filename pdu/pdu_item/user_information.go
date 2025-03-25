@@ -1,4 +1,4 @@
-package pdu
+package pdu_item
 
 import (
 	"encoding/binary"
@@ -31,7 +31,7 @@ func decodeUserInformationItem(d *dicomio.Decoder, length uint16) *UserInformati
 	d.PushLimit(int64(length))
 	defer d.PopLimit()
 	for !d.EOF() {
-		item := decodeSubItem(d)
+		item := DecodeSubItem(d)
 		if d.Error() != nil {
 			break
 		}
@@ -42,5 +42,5 @@ func decodeUserInformationItem(d *dicomio.Decoder, length uint16) *UserInformati
 
 func (v *UserInformationItem) String() string {
 	return fmt.Sprintf("UserInformationItem{items: %s}",
-		subItemListString(v.Items))
+		SubItemListString(v.Items))
 }

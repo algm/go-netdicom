@@ -1,4 +1,4 @@
-package pdu
+package pdu_item
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 type TransferSyntaxSubItem subItemWithName
 
 func decodeTransferSyntaxSubItem(d *dicomio.Decoder, length uint16) *TransferSyntaxSubItem {
-	return &TransferSyntaxSubItem{Name: decodeSubItemWithName(d, length)}
+	return &TransferSyntaxSubItem{Name: DecodeSubItemWithName(d, length)}
 }
 
 func (v *TransferSyntaxSubItem) Write(e *dicomio.Encoder) {

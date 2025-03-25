@@ -15,6 +15,7 @@ import (
 	"github.com/grailbio/go-dicom/dicomuid"
 	"github.com/mlibanori/go-netdicom/dimse"
 	"github.com/mlibanori/go-netdicom/pdu"
+	"github.com/mlibanori/go-netdicom/pdu/pdu_item"
 )
 
 type stateType int
@@ -208,10 +209,10 @@ var actionAe5 = &stateAction{"AE-5", "Issue Transport connection response primit
 		return sta02
 	}}
 
-func extractPresentationContextItems(items []pdu.SubItem) []*pdu.PresentationContextItem {
-	var contextItems []*pdu.PresentationContextItem
+func extractPresentationContextItems(items []pdu_item.SubItem) []*pdu_item.PresentationContextItem {
+	var contextItems []*pdu_item.PresentationContextItem
 	for _, item := range items {
-		if n, ok := item.(*pdu.PresentationContextItem); ok {
+		if n, ok := item.(*pdu_item.PresentationContextItem); ok {
 			contextItems = append(contextItems, n)
 		}
 	}
