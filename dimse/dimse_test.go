@@ -6,6 +6,7 @@ import (
 
 	"github.com/grailbio/go-dicom/dicomio"
 	"github.com/mlibanori/go-netdicom/dimse"
+	"github.com/mlibanori/go-netdicom/dimse/dimse_commands"
 )
 
 func testDIMSE(t *testing.T, v dimse.Message) {
@@ -13,7 +14,7 @@ func testDIMSE(t *testing.T, v dimse.Message) {
 	dimse.EncodeMessage(e, v)
 	bytes := e.Bytes()
 	d := dicomio.NewBytesDecoder(bytes, binary.LittleEndian, dicomio.ImplicitVR)
-	v2 := dimse.ReadMessage(d)
+	v2 := dimse_commands.ReadMessage(d)
 	err := d.Finish()
 	if err != nil {
 		t.Fatal(err)
@@ -24,7 +25,7 @@ func testDIMSE(t *testing.T, v dimse.Message) {
 }
 
 func TestCStoreRq(t *testing.T) {
-	testDIMSE(t, &dimse.CStoreRq{
+	testDIMSE(t, &dimse_commands.CStoreRq{
 		"1.2.3",
 		0x1234,
 		0x2345,
@@ -35,7 +36,7 @@ func TestCStoreRq(t *testing.T) {
 }
 
 func TestCStoreRsp(t *testing.T) {
-	testDIMSE(t, &dimse.CStoreRsp{
+	testDIMSE(t, &dimse_commands.CStoreRsp{
 		"1.2.3",
 		0x1234,
 		dimse.CommandDataSetTypeNull,
@@ -45,11 +46,11 @@ func TestCStoreRsp(t *testing.T) {
 }
 
 func TestCEchoRq(t *testing.T) {
-	testDIMSE(t, &dimse.CEchoRq{0x1234, 1, nil})
+	testDIMSE(t, &dimse_commands.CEchoRq{0x1234, 1, nil})
 }
 
 func TestCEchoRsp(t *testing.T) {
-	testDIMSE(t, &dimse.CEchoRsp{0x1234, 1,
+	testDIMSE(t, &dimse_commands.CEchoRsp{0x1234, 1,
 		dimse.Status{Status: dimse.StatusCode(0x2345)},
 		nil})
 }

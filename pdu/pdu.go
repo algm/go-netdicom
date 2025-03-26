@@ -6,12 +6,13 @@ package pdu
 //
 // http://dicom.nema.org/medical/dicom/current/output/pdf/part08.pdf
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"strings"
 
-	"github.com/grailbio/go-dicom/dicomio"
+	"github.com/suyashkumar/dicom/pkg/dicomio"
 )
 
 const CurrentProtocolVersion uint16 = 1
@@ -20,7 +21,7 @@ const CurrentProtocolVersion uint16 = 1
 type PDU interface {
 	fmt.Stringer
 	Write() ([]byte, error)
-	Read(*dicomio.Decoder) PDU
+	Read(*dicomio.Reader) (PDU, error)
 }
 
 // Type defines type of the PDU packet.
@@ -91,35 +92,28 @@ func ReadPDU(in io.Reader, maxPDUSize int) (PDU, error) {
 		// Avoid using too much memory. *2 is just an arbitrary slack.
 		return nil, fmt.Errorf("Invalid length %d; it's much larger than max PDU size of %d", length, maxPDUSize)
 	}
-	d := dicomio.NewDecoder(
-		&io.LimitedReader{R: in, N: int64(length)},
-		binary.BigEndian,  // PDU is always big endian
-		dicomio.UnknownVR) // irrelevant for PDU parsing
-	var pdu PDU
+	d := dicomio.NewReader(
+		bufio.NewReader(&io.LimitedReader{R: in, N: int64(length)}),
+		binary.BigEndian, // PDU is always big endian
+		int64(length))
 	switch pduType {
 	case TypeAAssociateRq:
-		pdu = AAssociateRQ{}.Read(d)
+		return AAssociateRQ{}.Read(d)
 	case TypeAAssociateAc:
-		pdu = AAssociateAC{}.Read(d)
+		return AAssociateAC{}.Read(d)
 	case TypeAAssociateRj:
-		pdu = AAssociateRj{}.Read(d)
+		return AAssociateRj{}.Read(d)
 	case TypeAAbort:
-		pdu = AAbort{}.Read(d)
+		return AAbort{}.Read(d)
 	case TypePDataTf:
-		pdu = PDataTf{}.Read(d)
+		return PDataTf{}.Read(d)
 	case TypeAReleaseRq:
-		pdu = AReleaseRq{}.Read(d)
+		return AReleaseRq{}.Read(d)
 	case TypeAReleaseRp:
-		pdu = AReleaseRp{}.Read(d)
+		return AReleaseRp{}.Read(d)
+	default:
+		return nil, fmt.Errorf("ReadPDU: unknown message type %d", pduType)
 	}
-	if pdu == nil {
-		err := fmt.Errorf("ReadPDU: unknown message type %d", pduType)
-		return nil, err
-	}
-	if err := d.Finish(); err != nil {
-		return nil, err
-	}
-	return pdu, nil
 }
 
 // fillString pads the string with " " up to the given length.

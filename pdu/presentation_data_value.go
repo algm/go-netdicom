@@ -3,7 +3,7 @@ package pdu
 import (
 	"fmt"
 
-	"github.com/grailbio/go-dicom/dicomio"
+	"github.com/suyashkumar/dicom/pkg/dicomio"
 )
 
 // P3.8 9.3.2.2.1 & 9.3.2.2.2
@@ -19,18 +19,31 @@ type PresentationDataValueItem struct {
 	Value []byte
 }
 
-func ReadPresentationDataValueItem(d *dicomio.Decoder) PresentationDataValueItem {
+func ReadPresentationDataValueItem(d *dicomio.Reader) (PresentationDataValueItem, error) {
 	item := PresentationDataValueItem{}
-	length := d.ReadUInt32()
-	item.ContextID = d.ReadByte()
-	header := d.ReadByte()
+	length, err := d.ReadUInt32()
+	if err != nil {
+		return PresentationDataValueItem{}, err
+	}
+	item.ContextID, err = d.ReadUInt8()
+	if err != nil {
+		return PresentationDataValueItem{}, err
+	}
+	header, err := d.ReadUInt8()
+	if err != nil {
+		return PresentationDataValueItem{}, err
+	}
 	item.Command = (header&1 != 0)
 	item.Last = (header&2 != 0)
-	item.Value = d.ReadBytes(int(length - 2)) // remove contextID and header
-	return item
+	item.Value = make([]byte, length-2)
+	_, err = d.Read(item.Value)
+	if err != nil {
+		return PresentationDataValueItem{}, err
+	}
+	return item, nil
 }
 
-func (v *PresentationDataValueItem) Write(e *dicomio.Encoder) {
+func (v *PresentationDataValueItem) Write(e *dicomio.Writer) error {
 	var header byte
 	if v.Command {
 		header |= 1
@@ -38,10 +51,16 @@ func (v *PresentationDataValueItem) Write(e *dicomio.Encoder) {
 	if v.Last {
 		header |= 2
 	}
-	e.WriteUInt32(uint32(2 + len(v.Value)))
-	e.WriteByte(v.ContextID)
-	e.WriteByte(header)
-	e.WriteBytes(v.Value)
+	if err := e.WriteUInt32(uint32(2 + len(v.Value))); err != nil {
+		return err
+	}
+	if err := e.WriteByte(v.ContextID); err != nil {
+		return err
+	}
+	if err := e.WriteByte(header); err != nil {
+		return err
+	}
+	return e.WriteBytes(v.Value)
 }
 
 func (v *PresentationDataValueItem) String() string {

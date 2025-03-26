@@ -15,6 +15,7 @@ import (
 	"github.com/grailbio/go-dicom/dicomtag"
 	"github.com/grailbio/go-dicom/dicomuid"
 	"github.com/mlibanori/go-netdicom/dimse"
+	"github.com/mlibanori/go-netdicom/dimse/dimse_commands"
 )
 
 type serviceUserStatus int
@@ -195,14 +196,14 @@ func (su *ServiceUser) CEcho() error {
 	}
 	defer su.disp.deleteCommand(cs)
 	cs.sendMessage(
-		&dimse.CEchoRq{MessageID: cs.messageID,
+		&dimse_commands.CEchoRq{MessageID: cs.messageID,
 			CommandDataSetType: dimse.CommandDataSetTypeNull,
 		}, nil)
 	event, ok := <-cs.upcallCh
 	if !ok {
 		return fmt.Errorf("Failed to receive C-ECHO response")
 	}
-	resp, ok := event.command.(*dimse.CEchoRsp)
+	resp, ok := event.command.(*dimse_commands.CEchoRsp)
 	if !ok {
 		return fmt.Errorf("Invalid response for C-ECHO: %v", event.command)
 	}
@@ -367,7 +368,7 @@ func (su *ServiceUser) CFind(qrLevel QRLevel, filter []*dicom.Element) chan CFin
 		defer close(ch)
 		defer su.disp.deleteCommand(cs)
 		cs.sendMessage(
-			&dimse.CFindRq{
+			&dimse_commands.CFindRq{
 				AffectedSOPClassUID: context.abstractSyntaxUID,
 				MessageID:           cs.messageID,
 				CommandDataSetType:  dimse.CommandDataSetTypeNonNull,
@@ -382,7 +383,7 @@ func (su *ServiceUser) CFind(qrLevel QRLevel, filter []*dicom.Element) chan CFin
 			}
 			doassert(event.eventType == upcallEventData)
 			doassert(event.command != nil)
-			resp, ok := event.command.(*dimse.CFindRsp)
+			resp, ok := event.command.(*dimse_commands.CFindRsp)
 			if !ok {
 				ch <- CFindResult{Err: fmt.Errorf("Found wrong response for C-FIND: %v", event.command)}
 				break
@@ -432,13 +433,13 @@ func (su *ServiceUser) CGet(qrLevel QRLevel, filter []*dicom.Element,
 	defer su.disp.deleteCommand(cs)
 
 	handleCStore := func(msg dimse.Message, data []byte, cs *serviceCommandState) {
-		c := msg.(*dimse.CStoreRq)
+		c := msg.(*dimse_commands.CStoreRq)
 		status := cb(
 			context.transferSyntaxUID,
 			c.AffectedSOPClassUID,
 			c.AffectedSOPInstanceUID,
 			data)
-		resp := &dimse.CStoreRsp{
+		resp := &dimse_commands.CStoreRsp{
 			AffectedSOPClassUID:       c.AffectedSOPClassUID,
 			MessageIDBeingRespondedTo: c.MessageID,
 			CommandDataSetType:        dimse.CommandDataSetTypeNull,
@@ -447,10 +448,10 @@ func (su *ServiceUser) CGet(qrLevel QRLevel, filter []*dicom.Element,
 		}
 		cs.sendMessage(resp, nil)
 	}
-	su.disp.registerCallback(dimse.CommandFieldCStoreRq, handleCStore)
-	defer su.disp.unregisterCallback(dimse.CommandFieldCStoreRq)
+	su.disp.registerCallback(dimse_commands.CommandFieldCStoreRq, handleCStore)
+	defer su.disp.unregisterCallback(dimse_commands.CommandFieldCStoreRq)
 	cs.sendMessage(
-		&dimse.CGetRq{
+		&dimse_commands.CGetRq{
 			AffectedSOPClassUID: context.abstractSyntaxUID,
 			MessageID:           cs.messageID,
 			CommandDataSetType:  dimse.CommandDataSetTypeNonNull,
@@ -464,7 +465,7 @@ func (su *ServiceUser) CGet(qrLevel QRLevel, filter []*dicom.Element,
 		}
 		doassert(event.eventType == upcallEventData)
 		doassert(event.command != nil)
-		resp, ok := event.command.(*dimse.CGetRsp)
+		resp, ok := event.command.(*dimse_commands.CGetRsp)
 		if !ok {
 			return fmt.Errorf("Found wrong response for C-GET: %v", event.command)
 		}

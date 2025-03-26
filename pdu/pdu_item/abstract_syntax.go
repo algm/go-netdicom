@@ -3,17 +3,21 @@ package pdu_item
 import (
 	"fmt"
 
-	"github.com/grailbio/go-dicom/dicomio"
+	"github.com/suyashkumar/dicom/pkg/dicomio"
 )
 
 type AbstractSyntaxSubItem subItemWithName
 
-func decodeAbstractSyntaxSubItem(d *dicomio.Decoder, length uint16) *AbstractSyntaxSubItem {
-	return &AbstractSyntaxSubItem{Name: DecodeSubItemWithName(d, length)}
+func decodeAbstractSyntaxSubItem(d *dicomio.Reader, length uint16) (*AbstractSyntaxSubItem, error) {
+	name, err := DecodeSubItemWithName(d, length)
+	if err != nil {
+		return nil, err
+	}
+	return &AbstractSyntaxSubItem{Name: name}, nil
 }
 
-func (v *AbstractSyntaxSubItem) Write(e *dicomio.Encoder) {
-	encodeSubItemWithName(e, ItemTypeAbstractSyntax, v.Name)
+func (v *AbstractSyntaxSubItem) Write(e *dicomio.Writer) error {
+	return encodeSubItemWithName(e, ItemTypeAbstractSyntax, v.Name)
 }
 
 func (v *AbstractSyntaxSubItem) String() string {

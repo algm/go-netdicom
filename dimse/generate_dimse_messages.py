@@ -105,7 +105,7 @@ def generate_go_definition(m: Message, out: IO[str]):
     print('', file=out)
     print(f'func (v *{m.name}) Encode(e *dicomio.Encoder) {{', file=out)
     print('    elems := []*dicom.Element{}', file=out)
-    print(f'	elems = append(elems, newElement(dicomtag.CommandField, uint16({m.command_field})))', file=out)
+    print(f'	elems = append(elems, NewElementdicomtag.CommandField, uint16({m.command_field})))', file=out)
     for f in m.fields:
         if not f.required:
             if f.type == 'string':
@@ -113,14 +113,14 @@ def generate_go_definition(m: Message, out: IO[str]):
             else:
                 zero = '0'
             print(f'	if v.{f.name} != {zero} {{', file=out)
-            print(f'		elems = append(elems, newElement(dicomtag.{f.name}, v.{f.name}))', file=out)
+            print(f'		elems = append(elems, NewElementdicomtag.{f.name}, v.{f.name}))', file=out)
             print(f'	}}', file=out)
         elif f.type == 'Status':
-            print(f'	elems = append(elems, newStatusElements(v.{f.name})...)', file=out)
+            print(f'	elems = append(elems, NewStatusElements(v.{f.name})...)', file=out)
         else:
-            print(f'	elems = append(elems, newElement(dicomtag.{f.name}, v.{f.name}))', file=out)
+            print(f'	elems = append(elems, NewElementdicomtag.{f.name}, v.{f.name}))', file=out)
     print('	elems = append(elems, v.Extra...)', file=out)
-    print('	encodeElements(e, elems)', file=out)
+    print('	EncodeElements(e, elems)', file=out)
     print('}', file=out)
 
     print('', file=out)
@@ -168,7 +168,7 @@ def generate_go_definition(m: Message, out: IO[str]):
 
 
     print('', file=out)
-    print(f'func decode{m.name}(d *messageDecoder) *{m.name} {{', file=out)
+    print(f'func decode{m.name}(d *MessageDecoder) *{m.name} {{', file=out)
     print(f'	v := &{m.name}{{}}', file=out)
     for f in m.fields:
         if f.type == 'Status':
@@ -183,9 +183,9 @@ def generate_go_definition(m: Message, out: IO[str]):
             else:
                 raise Exception(f)
             if f.required:
-                required = 'requiredElement'
+                required = 'RequiredElement'
             else:
-                required = 'optionalElement'
+                required = 'OptionalElement'
             print(f'	v.{f.name} = d.get{decoder}(dicomtag.{f.name}, {required})', file=out)
     print(f'	v.Extra = d.unparsedElements()', file=out)
     print(f'	return v', file=out)
@@ -213,7 +213,7 @@ import (
         for m in MESSAGES:
             print(f'const CommandField{m.name} = {m.command_field}', file=out)
 
-        print('func decodeMessageForType(d* messageDecoder, commandField uint16) Message {', file=out)
+        print('func decodeMessageForType(d* MessageDecoder, commandField uint16) Message {', file=out)
         print('	switch commandField {', file=out)
         for m in MESSAGES:
             print('	case 0x%x:' % (m.command_field, ), file=out)

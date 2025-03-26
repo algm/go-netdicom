@@ -3,10 +3,11 @@ package pdu_item
 //go:generate stringer -type PresentationContextResult
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 
-	"github.com/grailbio/go-dicom/dicomio"
+	"github.com/suyashkumar/dicom/pkg/dicomio"
 )
 
 // Result of abstractsyntax/transfersyntax handshake during A-ACCEPT.  P3.8,
@@ -34,46 +35,65 @@ type PresentationContextItem struct {
 	Items []SubItem // List of {Abstract,Transfer}SyntaxSubItem
 }
 
-func decodePresentationContextItem(d *dicomio.Decoder, itemType byte, length uint16) *PresentationContextItem {
+func decodePresentationContextItem(d *dicomio.Reader, itemType byte, length uint16) (*PresentationContextItem, error) {
 	v := &PresentationContextItem{Type: itemType}
+	var err error
 	d.PushLimit(int64(length))
 	defer d.PopLimit()
-	v.ContextID = d.ReadByte()
-	d.Skip(1)
-	v.Result = PresentationContextResult(d.ReadByte())
-	d.Skip(1)
-	for !d.EOF() {
-		item := DecodeSubItem(d)
-		if d.Error() != nil {
-			break
+	v.ContextID, err = d.ReadUInt8()
+	if err != nil {
+		return nil, err
+	}
+	err = d.Skip(1)
+	if err != nil {
+		return nil, err
+	}
+	presentationContextResult, err := d.ReadUInt8()
+	if err != nil {
+		return nil, err
+	}
+	v.Result = PresentationContextResult(presentationContextResult)
+	err = d.Skip(1)
+	if err != nil {
+		return nil, err
+	}
+	for !d.IsLimitExhausted() {
+		item, err := DecodeSubItem(d)
+		if err != nil {
+			return nil, err
 		}
 		v.Items = append(v.Items, item)
 	}
 	if v.ContextID%2 != 1 {
-		d.SetError(fmt.Errorf("PresentationContextItem ID must be odd, but found %x", v.ContextID))
+		return nil, fmt.Errorf("PresentationContextItem ID must be odd, but found %x", v.ContextID)
 	}
-	return v
+	return v, nil
 }
 
-func (v *PresentationContextItem) Write(e *dicomio.Encoder) {
+func (v *PresentationContextItem) Write(e *dicomio.Writer) error {
 	if v.Type != ItemTypePresentationContextRequest &&
 		v.Type != ItemTypePresentationContextResponse {
 		panic(*v)
 	}
-
-	itemEncoder := dicomio.NewBytesEncoder(binary.BigEndian, dicomio.UnknownVR)
+	var itemBuffer bytes.Buffer
+	itemEncoder := dicomio.NewWriter(&itemBuffer, binary.BigEndian, true)
 	for _, s := range v.Items {
-		s.Write(itemEncoder)
+		if err := s.Write(itemEncoder); err != nil {
+			return err
+		}
 	}
-	if err := itemEncoder.Error(); err != nil {
-		e.SetError(err)
-		return
+	itemBytes := itemBuffer.Bytes()
+	subItemLength := uint16(SubItemHeaderLength + len(itemBytes))
+	if err := encodeSubItemHeader(e, v.Type, subItemLength); err != nil {
+		return err
 	}
-	itemBytes := itemEncoder.Bytes()
-	encodeSubItemHeader(e, v.Type, uint16(4+len(itemBytes)))
-	e.WriteByte(v.ContextID)
-	e.WriteZeros(3)
-	e.WriteBytes(itemBytes)
+	if err := e.WriteByte(v.ContextID); err != nil {
+		return err
+	}
+	if err := e.WriteZeros(3); err != nil {
+		return err
+	}
+	return e.WriteBytes(itemBytes)
 }
 
 func (v *PresentationContextItem) String() string {

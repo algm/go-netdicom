@@ -3,16 +3,15 @@ package pdu
 import (
 	"fmt"
 
-	"github.com/grailbio/go-dicom/dicomio"
+	"github.com/suyashkumar/dicom/pkg/dicomio"
 )
 
 type AReleaseRp struct {
 }
 
-func (AReleaseRp) Read(d *dicomio.Decoder) PDU {
+func (AReleaseRp) Read(d *dicomio.Reader) (PDU, error) {
 	pdu := &AReleaseRp{}
-	d.Skip(4)
-	return pdu
+	return pdu, d.Skip(4)
 }
 
 func (pdu *AReleaseRp) Write() ([]byte, error) {

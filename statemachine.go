@@ -14,6 +14,7 @@ import (
 	"github.com/grailbio/go-dicom/dicomlog"
 	"github.com/grailbio/go-dicom/dicomuid"
 	"github.com/mlibanori/go-netdicom/dimse"
+	"github.com/mlibanori/go-netdicom/dimse/dimse_commands"
 	"github.com/mlibanori/go-netdicom/pdu"
 	"github.com/mlibanori/go-netdicom/pdu/pdu_item"
 )
@@ -750,7 +751,7 @@ type stateMachine struct {
 	currentState stateType
 
 	// For assembling DIMSE command from multiple P_DATA_TF fragments.
-	commandAssembler dimse.CommandAssembler
+	commandAssembler dimse_commands.CommandAssembler
 
 	// Only for testing.
 	faults FaultInjector
@@ -813,9 +814,10 @@ func networkReaderThread(ch chan stateEvent, conn net.Conn, maxPDUSize int, smNa
 	dicomlog.Vprintf(2, "dicom.StateMachine %s: Starting network reader, maxPDU %d", smName, maxPDUSize)
 	doassert(maxPDUSize > 16*1024)
 	for {
+		dicomlog.Vprintf(0, "dicom.StateMachine %s: Reading PDU: maxpdusize %d", smName, maxPDUSize)
 		v, err := pdu.ReadPDU(conn, maxPDUSize)
 		if err != nil {
-			dicomlog.Vprintf(0, "dicom.StateMachine %s: Failed to read PDU: %v", smName, err)
+			dicomlog.Vprintf(0, "dicom.StateMachine %s: Failed to read PDU: %v,", smName, err)
 			if err == io.EOF {
 				ch <- stateEvent{event: evt17, pdu: nil, err: nil}
 			} else {
@@ -824,6 +826,7 @@ func networkReaderThread(ch chan stateEvent, conn net.Conn, maxPDUSize int, smNa
 			close(ch)
 			break
 		}
+		dicomlog.Vprintf(0, "dicom.StateMachine %s: read PDU: %v", smName, v.String())
 		doassert(v != nil)
 		dicomlog.Vprintf(2, "dicom.StateMachine %s: read PDU: %v", smName, v.String())
 		switch n := v.(type) {

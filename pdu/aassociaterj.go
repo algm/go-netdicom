@@ -6,7 +6,7 @@ package pdu
 import (
 	"fmt"
 
-	"github.com/grailbio/go-dicom/dicomio"
+	"github.com/suyashkumar/dicom/pkg/dicomio"
 )
 
 // P3.8 9.3.4
@@ -43,13 +43,27 @@ const (
 	SourceULServiceProviderPresentation SourceType = 3
 )
 
-func (AAssociateRj) Read(d *dicomio.Decoder) PDU {
+func (AAssociateRj) Read(d *dicomio.Reader) (PDU, error) {
 	pdu := &AAssociateRj{}
-	d.Skip(1) // reserved
-	pdu.Result = RejectResultType(d.ReadByte())
-	pdu.Source = SourceType(d.ReadByte())
-	pdu.Reason = RejectReasonType(d.ReadByte())
-	return pdu
+	if err := d.Skip(1); err != nil {
+		return nil, err
+	}
+	rejectResult, err := d.ReadUInt8()
+	if err != nil {
+		return nil, err
+	}
+	pdu.Result = RejectResultType(rejectResult)
+	source, err := d.ReadUInt8()
+	if err != nil {
+		return nil, err
+	}
+	pdu.Source = SourceType(source)
+	reason, err := d.ReadUInt8()
+	if err != nil {
+		return nil, err
+	}
+	pdu.Reason = RejectReasonType(reason)
+	return pdu, nil
 }
 
 func (pdu *AAssociateRj) Write() ([]byte, error) {

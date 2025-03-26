@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/grailbio/go-dicom/dicomio"
+	"github.com/suyashkumar/dicom/pkg/dicomio"
 )
+
+const SubItemHeaderLength = 4
 
 // SubItem is the interface for DUL items, such as ApplicationContextItem and
 // TransferSyntaxSubItem.
@@ -13,7 +15,7 @@ type SubItem interface {
 	fmt.Stringer
 
 	// Write serializes the item.
-	Write(*dicomio.Encoder)
+	Write(*dicomio.Writer) error
 }
 
 // Possible Type field values for SubItem.
@@ -31,10 +33,18 @@ const (
 	ItemTypeImplementationVersionName    = 0x55
 )
 
-func DecodeSubItem(d *dicomio.Decoder) SubItem {
-	itemType := d.ReadByte()
-	d.Skip(1)
-	length := d.ReadUInt16()
+func DecodeSubItem(d *dicomio.Reader) (SubItem, error) {
+	itemType, err := d.ReadUInt8()
+	if err != nil {
+		return nil, err
+	}
+	if err := d.Skip(1); err != nil {
+		return nil, err
+	}
+	length, err := d.ReadUInt16()
+	if err != nil {
+		return nil, err
+	}
 	switch itemType {
 	case ItemTypeApplicationContext:
 		return decodeApplicationContextItem(d, length)
@@ -59,15 +69,18 @@ func DecodeSubItem(d *dicomio.Decoder) SubItem {
 	case ItemTypeImplementationVersionName:
 		return decodeImplementationVersionNameSubItem(d, length)
 	default:
-		d.SetError(fmt.Errorf("Unknown item type: 0x%x", itemType))
-		return nil
+		return nil, fmt.Errorf("unknown item type: 0x%x", itemType)
 	}
 }
 
-func encodeSubItemHeader(e *dicomio.Encoder, itemType byte, length uint16) {
-	e.WriteByte(itemType)
-	e.WriteZeros(1)
-	e.WriteUInt16(length)
+func encodeSubItemHeader(e *dicomio.Writer, itemType byte, length uint16) error {
+	if err := e.WriteByte(itemType); err != nil {
+		return err
+	}
+	if err := e.WriteZeros(1); err != nil {
+		return err
+	}
+	return e.WriteUInt16(length)
 }
 
 func SubItemListString(items []SubItem) string {
@@ -88,14 +101,17 @@ type subItemWithName struct {
 	Name string
 }
 
-func encodeSubItemWithName(e *dicomio.Encoder, itemType byte, name string) {
-	encodeSubItemHeader(e, itemType, uint16(len(name)))
+func encodeSubItemWithName(e *dicomio.Writer, itemType byte, name string) error {
+	err := encodeSubItemHeader(e, itemType, uint16(len(name)))
+	if err != nil {
+		return err
+	}
 	// TODO: handle unicode properly
-	e.WriteBytes([]byte(name))
+	return e.WriteBytes([]byte(name))
 }
 
-func DecodeSubItemWithName(d *dicomio.Decoder, length uint16) string {
-	return d.ReadString(int(length))
+func DecodeSubItemWithName(d *dicomio.Reader, length uint16) (string, error) {
+	return d.ReadString(uint32(length))
 }
 
 type SubItemUnsupported struct {
@@ -103,7 +119,7 @@ type SubItemUnsupported struct {
 	Data []byte
 }
 
-func (item *SubItemUnsupported) Write(e *dicomio.Encoder) {
+func (item *SubItemUnsupported) Write(e *dicomio.Writer) {
 	encodeSubItemHeader(e, item.Type, uint16(len(item.Data)))
 	// TODO: handle unicode properly
 	e.WriteBytes(item.Data)

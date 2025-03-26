@@ -3,17 +3,21 @@ package pdu_item
 import (
 	"fmt"
 
-	"github.com/grailbio/go-dicom/dicomio"
+	"github.com/suyashkumar/dicom/pkg/dicomio"
 )
 
 type TransferSyntaxSubItem subItemWithName
 
-func decodeTransferSyntaxSubItem(d *dicomio.Decoder, length uint16) *TransferSyntaxSubItem {
-	return &TransferSyntaxSubItem{Name: DecodeSubItemWithName(d, length)}
+func decodeTransferSyntaxSubItem(d *dicomio.Reader, length uint16) (*TransferSyntaxSubItem, error) {
+	name, err := DecodeSubItemWithName(d, length)
+	if err != nil {
+		return nil, err
+	}
+	return &TransferSyntaxSubItem{Name: name}, err
 }
 
-func (v *TransferSyntaxSubItem) Write(e *dicomio.Encoder) {
-	encodeSubItemWithName(e, ItemTypeTransferSyntax, v.Name)
+func (v *TransferSyntaxSubItem) Write(e *dicomio.Writer) error {
+	return encodeSubItemWithName(e, ItemTypeTransferSyntax, v.Name)
 }
 
 func (v *TransferSyntaxSubItem) String() string {

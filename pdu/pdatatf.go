@@ -4,31 +4,34 @@ import (
 	"bytes"
 	"encoding/binary"
 
-	"github.com/grailbio/go-dicom/dicomio"
+	"github.com/suyashkumar/dicom/pkg/dicomio"
 )
 
 type PDataTf struct {
 	Items []PresentationDataValueItem
 }
 
-func (PDataTf) Read(d *dicomio.Decoder) PDU {
+func (PDataTf) Read(d *dicomio.Reader) (PDU, error) {
 	pdu := &PDataTf{}
-	for !d.EOF() {
-		item := ReadPresentationDataValueItem(d)
-		if d.Error() != nil {
-			break
+	for !d.IsLimitExhausted() {
+		item, err := ReadPresentationDataValueItem(d)
+		if err != nil {
+			return nil, err
 		}
 		pdu.Items = append(pdu.Items, item)
 	}
-	return pdu
+	return pdu, nil
 }
 
 func (pdu *PDataTf) Write() ([]byte, error) {
-	e := dicomio.NewBytesEncoder(binary.BigEndian, dicomio.UnknownVR)
+	var buf bytes.Buffer
+	e := dicomio.NewWriter(&buf, binary.BigEndian, false)
 	for _, item := range pdu.Items {
-		item.Write(e)
+		if err := item.Write(e); err != nil {
+			return nil, err
+		}
 	}
-	return e.Bytes(), e.Error()
+	return buf.Bytes(), nil
 }
 
 func (pdu *PDataTf) String() string {

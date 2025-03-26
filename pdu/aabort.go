@@ -4,7 +4,7 @@ package pdu
 import (
 	"fmt"
 
-	"github.com/grailbio/go-dicom/dicomio"
+	"github.com/suyashkumar/dicom/pkg/dicomio"
 )
 
 type AbortReasonType byte
@@ -22,12 +22,22 @@ type AAbort struct {
 	Reason AbortReasonType
 }
 
-func (AAbort) Read(d *dicomio.Decoder) PDU {
+func (AAbort) Read(d *dicomio.Reader) (PDU, error) {
 	pdu := &AAbort{}
-	d.Skip(2)
-	pdu.Source = SourceType(d.ReadByte())
-	pdu.Reason = AbortReasonType(d.ReadByte())
-	return pdu
+	if err := d.Skip(2); err != nil {
+		return nil, err
+	}
+	sourceType, err := d.ReadUInt8()
+	if err != nil {
+		return nil, err
+	}
+	pdu.Source = SourceType(sourceType)
+	reasonType, err := d.ReadUInt8()
+	if err != nil {
+		return nil, err
+	}
+	pdu.Reason = AbortReasonType(reasonType)
+	return pdu, nil
 }
 
 func (pdu *AAbort) Write() ([]byte, error) {

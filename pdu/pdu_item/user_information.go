@@ -1,10 +1,11 @@
 package pdu_item
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 
-	"github.com/grailbio/go-dicom/dicomio"
+	"github.com/suyashkumar/dicom/pkg/dicomio"
 )
 
 // P3.8 9.3.2.3
@@ -12,32 +13,35 @@ type UserInformationItem struct {
 	Items []SubItem // P3.8, Annex D.
 }
 
-func (v *UserInformationItem) Write(e *dicomio.Encoder) {
-	itemEncoder := dicomio.NewBytesEncoder(binary.BigEndian, dicomio.UnknownVR)
+func (v *UserInformationItem) Write(e *dicomio.Writer) error {
+	var itemBuffer bytes.Buffer
+	itemEncoder := dicomio.NewWriter(&itemBuffer, binary.BigEndian, true)
 	for _, s := range v.Items {
-		s.Write(itemEncoder)
+		if err := s.Write(itemEncoder); err != nil {
+			return err
+		}
 	}
-	if err := itemEncoder.Error(); err != nil {
-		e.SetError(err)
-		return
+	itemBytes := itemBuffer.Bytes()
+	if err := encodeSubItemHeader(e, ItemTypeUserInformation, uint16(len(itemBytes))); err != nil {
+		return err
 	}
-	itemBytes := itemEncoder.Bytes()
-	encodeSubItemHeader(e, ItemTypeUserInformation, uint16(len(itemBytes)))
-	e.WriteBytes(itemBytes)
+	return e.WriteBytes(itemBytes)
 }
 
-func decodeUserInformationItem(d *dicomio.Decoder, length uint16) *UserInformationItem {
+func decodeUserInformationItem(d *dicomio.Reader, length uint16) (*UserInformationItem, error) {
 	v := &UserInformationItem{}
-	d.PushLimit(int64(length))
+	if err := d.PushLimit(int64(length)); err != nil {
+		return nil, err
+	}
 	defer d.PopLimit()
-	for !d.EOF() {
-		item := DecodeSubItem(d)
-		if d.Error() != nil {
-			break
+	for !d.IsLimitExhausted() {
+		item, err := DecodeSubItem(d)
+		if err != nil {
+			return nil, err
 		}
 		v.Items = append(v.Items, item)
 	}
-	return v
+	return v, nil
 }
 
 func (v *UserInformationItem) String() string {

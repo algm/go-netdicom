@@ -1,11 +1,12 @@
 package pdu
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 
-	"github.com/grailbio/go-dicom/dicomio"
 	"github.com/mlibanori/go-netdicom/pdu/pdu_item"
+	"github.com/suyashkumar/dicom/pkg/dicomio"
 )
 
 // Defines A_ASSOCIATE_AC. P3.8 9.3.2 and 9.3.3
@@ -17,40 +18,64 @@ type AAssociateAC struct {
 	Items          []pdu_item.SubItem
 }
 
-func (AAssociateAC) Read(d *dicomio.Decoder) PDU {
+func (AAssociateAC) Read(d *dicomio.Reader) (PDU, error) {
 	pdu := &AAssociateAC{}
-	pdu.ProtocolVersion = d.ReadUInt16()
+	var err error
+	pdu.ProtocolVersion, err = d.ReadUInt16()
+	if err != nil {
+		return nil, err
+	}
 	d.Skip(2) // Reserved
-	pdu.CalledAETitle = d.ReadString(16)
-	pdu.CallingAETitle = d.ReadString(16)
+	pdu.CalledAETitle, err = d.ReadString(16)
+	if err != nil {
+		return nil, err
+	}
+	pdu.CallingAETitle, err = d.ReadString(16)
+	if err != nil {
+		return nil, err
+	}
 	d.Skip(8 * 4)
-	for !d.EOF() {
-		item := pdu_item.DecodeSubItem(d)
-		if d.Error() != nil {
+	for !d.IsLimitExhausted() {
+		item, err := pdu_item.DecodeSubItem(d)
+		if err != nil {
 			break
 		}
 		pdu.Items = append(pdu.Items, item)
 	}
 	if pdu.CalledAETitle == "" || pdu.CallingAETitle == "" {
-		d.SetError(fmt.Errorf("A_ASSOCIATE.{Called,Calling}AETitle must not be empty, in %v", pdu.String()))
+		err = fmt.Errorf("A_ASSOCIATE.{Called,Calling}AETitle must not be empty, in %v", pdu.String())
 	}
-	return pdu
+	return pdu, err
 }
 
 func (pdu *AAssociateAC) Write() ([]byte, error) {
-	e := dicomio.NewBytesEncoder(binary.BigEndian, dicomio.UnknownVR)
+	var buf bytes.Buffer
+	e := dicomio.NewWriter(&buf, binary.BigEndian, false)
 	if pdu.CalledAETitle == "" || pdu.CallingAETitle == "" {
-		panic(*pdu)
+		return nil, fmt.Errorf("CalledAETitle or CallingAETitle cannot be empty: %+v", *pdu)
 	}
-	e.WriteUInt16(pdu.ProtocolVersion)
-	e.WriteZeros(2) // Reserved
-	e.WriteString(fillString(pdu.CalledAETitle))
-	e.WriteString(fillString(pdu.CallingAETitle))
-	e.WriteZeros(8 * 4)
+	if err := e.WriteUInt16(pdu.ProtocolVersion); err != nil {
+		return nil, err
+	}
+	if err := e.WriteZeros(2); err != nil {
+		return nil, err
+	}
+	if err := e.WriteString(fillString(pdu.CalledAETitle)); err != nil {
+		return nil, err
+	}
+	if err := e.WriteString(fillString(pdu.CallingAETitle)); err != nil {
+		return nil, err
+	}
+	if err := e.WriteZeros(8 * 4); err != nil {
+		return nil, err
+	}
 	for _, item := range pdu.Items {
-		item.Write(e)
+		err := item.Write(e)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return e.Bytes(), e.Error()
+	return buf.Bytes(), nil
 }
 
 func (pdu *AAssociateAC) String() string {
