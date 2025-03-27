@@ -105,7 +105,7 @@ def generate_go_definition(m: Message, out: IO[str]):
     print('', file=out)
     print(f'func (v *{m.name}) Encode(e *dicomio.Encoder) {{', file=out)
     print('    elems := []*dicom.Element{}', file=out)
-    print(f'	elems = append(elems, NewElementdicomtag.CommandField, uint16({m.command_field})))', file=out)
+    print(f'	elems = append(elems, NewElementMessageIDTag, uint16({m.command_field})))', file=out)
     for f in m.fields:
         if not f.required:
             if f.type == 'string':

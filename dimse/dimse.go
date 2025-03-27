@@ -16,6 +16,7 @@ import (
 	"github.com/grailbio/go-dicom/dicomio"
 	"github.com/grailbio/go-dicom/dicomlog"
 	"github.com/grailbio/go-dicom/dicomtag"
+	"github.com/mlibanori/go-netdicom/commandset"
 )
 
 // Message defines the common interface for all DIMSE message types.
@@ -103,8 +104,8 @@ func (d *MessageDecoder) UnparsedElements() (unparsed []*dicom.Element) {
 }
 
 func (d *MessageDecoder) GetStatus() (s Status) {
-	s.Status = StatusCode(d.GetUInt16(dicomtag.Status, RequiredElement))
-	s.ErrorComment = d.GetString(dicomtag.ErrorComment, OptionalElement)
+	s.Status = StatusCode(d.GetUInt16(commandset.Status, RequiredElement))
+	s.ErrorComment = d.GetString(commandset.ErrorComment, OptionalElement)
 	return s
 }
 
@@ -147,9 +148,9 @@ func EncodeElements(e *dicomio.Encoder, elems []*dicom.Element) {
 // Create a list of elements that represent the dimse status. The list contains
 // multiple elements for non-ok status.
 func NewStatusElements(s Status) []*dicom.Element {
-	elems := []*dicom.Element{NewElement(dicomtag.Status, uint16(s.Status))}
+	elems := []*dicom.Element{NewElement(commandset.Status, uint16(s.Status))}
 	if s.ErrorComment != "" {
-		elems = append(elems, NewElement(dicomtag.ErrorComment, s.ErrorComment))
+		elems = append(elems, NewElement(commandset.ErrorComment, s.ErrorComment))
 	}
 	return elems
 }
@@ -221,7 +222,7 @@ func EncodeMessage(e *dicomio.Encoder, v Message) {
 	bytes := subEncoder.Bytes()
 	e.PushTransferSyntax(binary.LittleEndian, dicomio.ImplicitVR)
 	defer e.PopTransferSyntax()
-	dicom.WriteElement(e, NewElement(dicomtag.CommandGroupLength, uint32(len(bytes))))
+	dicom.WriteElement(e, NewElement(commandset.CommandGroupLength, uint32(len(bytes))))
 	e.WriteBytes(bytes)
 }
 

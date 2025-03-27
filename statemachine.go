@@ -814,7 +814,6 @@ func networkReaderThread(ch chan stateEvent, conn net.Conn, maxPDUSize int, smNa
 	dicomlog.Vprintf(2, "dicom.StateMachine %s: Starting network reader, maxPDU %d", smName, maxPDUSize)
 	doassert(maxPDUSize > 16*1024)
 	for {
-		dicomlog.Vprintf(0, "dicom.StateMachine %s: Reading PDU: maxpdusize %d", smName, maxPDUSize)
 		v, err := pdu.ReadPDU(conn, maxPDUSize)
 		if err != nil {
 			dicomlog.Vprintf(0, "dicom.StateMachine %s: Failed to read PDU: %v,", smName, err)
