@@ -1,6 +1,7 @@
 package pdu
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/suyashkumar/dicom/pkg/dicomio"
@@ -36,7 +37,7 @@ func ReadPresentationDataValueItem(d *dicomio.Reader) (PresentationDataValueItem
 	item.Command = (header&1 != 0)
 	item.Last = (header&2 != 0)
 	item.Value = make([]byte, length-2)
-	_, err = d.Read(item.Value)
+	err = binary.Read(d, binary.BigEndian, &item.Value)
 	if err != nil {
 		return PresentationDataValueItem{}, err
 	}
