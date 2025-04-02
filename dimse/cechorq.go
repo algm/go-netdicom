@@ -10,7 +10,7 @@ import (
 
 type CEchoRq struct {
 	MessageID          MessageID
-	CommandDataSetType uint16
+	CommandDataSetType CommandDataSetType
 	Extra              []*dicom.Element // Unparsed elements
 }
 
@@ -28,7 +28,7 @@ func (v *CEchoRq) Encode(e io.Writer) error {
 	}
 	elems = append(elems, elem)
 
-	elem, err = NewElement(commandset.CommandDataSetType, v.CommandDataSetType)
+	elem, err = NewElement(commandset.CommandDataSetType, uint16(v.CommandDataSetType))
 	if err != nil {
 		return fmt.Errorf("CEchoRq.Encode: failed to create CommandDataSetType element: %w", err)
 	}
@@ -68,7 +68,7 @@ func (CEchoRq) decode(d *MessageDecoder) (*CEchoRq, error) {
 		return nil, fmt.Errorf("CEchoRq.decode: failed to get MessageID: %w", err)
 	}
 
-	v.CommandDataSetType, err = d.GetUInt16(commandset.CommandDataSetType, RequiredElement)
+	v.CommandDataSetType, err = d.GetCommandDataSetType()
 	if err != nil {
 		return nil, fmt.Errorf("CEchoRq.decode: failed to get CommandDataSetType: %w", err)
 	}

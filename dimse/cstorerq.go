@@ -12,7 +12,7 @@ type CStoreRq struct {
 	AffectedSOPClassUID                  string
 	MessageID                            MessageID
 	Priority                             uint16
-	CommandDataSetType                   uint16
+	CommandDataSetType                   CommandDataSetType
 	AffectedSOPInstanceUID               string
 	MoveOriginatorApplicationEntityTitle string
 	MoveOriginatorMessageID              MessageID
@@ -46,7 +46,7 @@ func (v *CStoreRq) Encode(e io.Writer) error {
 	}
 	elems = append(elems, elem)
 
-	elem, err = NewElement(commandset.CommandDataSetType, v.CommandDataSetType)
+	elem, err = NewElement(commandset.CommandDataSetType, uint16(v.CommandDataSetType))
 	if err != nil {
 		return fmt.Errorf("CStoreRq.Encode: failed to create CommandDataSetType element: %w", err)
 	}
@@ -120,7 +120,7 @@ func (CStoreRq) decode(d *MessageDecoder) (*CStoreRq, error) {
 		return nil, fmt.Errorf("cStoreRq.decode: failed to decode Priority: %w", err)
 	}
 
-	v.CommandDataSetType, err = d.GetUInt16(commandset.CommandDataSetType, RequiredElement)
+	v.CommandDataSetType, err = d.GetCommandDataSetType()
 	if err != nil {
 		return nil, fmt.Errorf("cStoreRq.decode: failed to decode CommandDataSetType: %w", err)
 	}

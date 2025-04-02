@@ -13,7 +13,7 @@ type CMoveRq struct {
 	MessageID           MessageID
 	Priority            uint16
 	MoveDestination     string
-	CommandDataSetType  uint16
+	CommandDataSetType  CommandDataSetType
 	Extra               []*dicom.Element // Unparsed elements
 }
 
@@ -50,7 +50,7 @@ func (v *CMoveRq) Encode(e io.Writer) error {
 	}
 	elems = append(elems, elem)
 
-	elem, err = NewElement(commandset.CommandDataSetType, v.CommandDataSetType)
+	elem, err = NewElement(commandset.CommandDataSetType, uint16(v.CommandDataSetType))
 	if err != nil {
 		return fmt.Errorf("CMoveRq.Encode: failed to create CommandDataSetType element: %w", err)
 	}
@@ -108,7 +108,7 @@ func (CMoveRq) decode(d *MessageDecoder) (*CMoveRq, error) {
 		return nil, fmt.Errorf("cMoveRq.decode: failed to decode MoveDestination: %w", err)
 	}
 
-	v.CommandDataSetType, err = d.GetUInt16(commandset.CommandDataSetType, RequiredElement)
+	v.CommandDataSetType, err = d.GetCommandDataSetType()
 	if err != nil {
 		return nil, fmt.Errorf("cMoveRq.decode: failed to decode CommandDataSetType: %w", err)
 	}

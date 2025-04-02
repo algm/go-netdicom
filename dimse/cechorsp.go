@@ -10,7 +10,7 @@ import (
 
 type CEchoRsp struct {
 	MessageIDBeingRespondedTo MessageID
-	CommandDataSetType        uint16
+	CommandDataSetType        CommandDataSetType
 	Status                    Status
 	Extra                     []*dicom.Element // Unparsed elements
 }
@@ -30,13 +30,13 @@ func (v *CEchoRsp) Encode(e io.Writer) error {
 	}
 	elems = append(elems, elem)
 
-	elem, err = NewElement(commandset.CommandDataSetType, v.CommandDataSetType)
+	elem, err = NewElement(commandset.CommandDataSetType, uint16(v.CommandDataSetType))
 	if err != nil {
 		return fmt.Errorf("CEchoRsp.Encode: failed to create CommandDataSetType element: %w", err)
 	}
 	elems = append(elems, elem)
 
-	statusElems, err := NewStatusElements(v.Status)
+	statusElems, err := v.Status.ToElements()
 	if err != nil {
 		return fmt.Errorf("CEchoRsp.Encode: failed to create Status elements: %w", err)
 	}
@@ -80,7 +80,7 @@ func (CEchoRsp) decode(d *MessageDecoder) (*CEchoRsp, error) {
 		return nil, fmt.Errorf("cEchoRsp.decode: failed to decode MessageIDBeingRespondedTo: %w", err)
 	}
 
-	v.CommandDataSetType, err = d.GetUInt16(commandset.CommandDataSetType, RequiredElement)
+	v.CommandDataSetType, err = d.GetCommandDataSetType()
 	if err != nil {
 		return nil, fmt.Errorf("cEchoRsp.decode: failed to decode CommandDataSetType: %w", err)
 	}

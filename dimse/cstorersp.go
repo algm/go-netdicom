@@ -11,7 +11,7 @@ import (
 type CStoreRsp struct {
 	AffectedSOPClassUID       string
 	MessageIDBeingRespondedTo MessageID
-	CommandDataSetType        uint16
+	CommandDataSetType        CommandDataSetType
 	AffectedSOPInstanceUID    string
 	Status                    Status
 	Extra                     []*dicom.Element // Unparsed elements
@@ -38,7 +38,7 @@ func (v *CStoreRsp) Encode(e io.Writer) error {
 	}
 	elems = append(elems, elem)
 
-	elem, err = NewElement(commandset.CommandDataSetType, v.CommandDataSetType)
+	elem, err = NewElement(commandset.CommandDataSetType, uint16(v.CommandDataSetType))
 	if err != nil {
 		return fmt.Errorf("CStoreRsp.Encode: failed to create CommandDataSetType element: %w", err)
 	}
@@ -50,7 +50,7 @@ func (v *CStoreRsp) Encode(e io.Writer) error {
 	}
 	elems = append(elems, elem)
 
-	statusElems, err := NewStatusElements(v.Status)
+	statusElems, err := v.Status.ToElements()
 	if err != nil {
 		return fmt.Errorf("CStoreRsp.Encode: failed to create Status elements: %w", err)
 	}
@@ -98,7 +98,7 @@ func (CStoreRsp) decode(d *MessageDecoder) (*CStoreRsp, error) {
 		return nil, fmt.Errorf("cStoreRsp.decode: failed to decode MessageIDBeingRespondedTo: %w", err)
 	}
 
-	v.CommandDataSetType, err = d.GetUInt16(commandset.CommandDataSetType, RequiredElement)
+	v.CommandDataSetType, err = d.GetCommandDataSetType()
 	if err != nil {
 		return nil, fmt.Errorf("cStoreRsp.decode: failed to decode CommandDataSetType: %w", err)
 	}

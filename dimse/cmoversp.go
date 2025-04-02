@@ -11,7 +11,7 @@ import (
 type CMoveRsp struct {
 	AffectedSOPClassUID            string
 	MessageIDBeingRespondedTo      MessageID
-	CommandDataSetType             uint16
+	CommandDataSetType             CommandDataSetType
 	NumberOfRemainingSuboperations uint16
 	NumberOfCompletedSuboperations uint16
 	NumberOfFailedSuboperations    uint16
@@ -41,7 +41,7 @@ func (v *CMoveRsp) Encode(e io.Writer) error {
 	}
 	elems = append(elems, elem)
 
-	elem, err = NewElement(commandset.CommandDataSetType, v.CommandDataSetType)
+	elem, err = NewElement(commandset.CommandDataSetType, uint16(v.CommandDataSetType))
 	if err != nil {
 		return fmt.Errorf("CMoveRsp.Encode: failed to create CommandDataSetType element: %w", err)
 	}
@@ -79,7 +79,7 @@ func (v *CMoveRsp) Encode(e io.Writer) error {
 		elems = append(elems, elem)
 	}
 
-	statusElems, err := NewStatusElements(v.Status)
+	statusElems, err := v.Status.ToElements()
 	if err != nil {
 		return fmt.Errorf("CMoveRsp.Encode: failed to create status elements: %w", err)
 	}
@@ -128,7 +128,7 @@ func (CMoveRsp) decode(d *MessageDecoder) (*CMoveRsp, error) {
 		return nil, fmt.Errorf("cMoveRsp.decode: failed to decode MessageIDBeingRespondedTo: %w", err)
 	}
 
-	v.CommandDataSetType, err = d.GetUInt16(commandset.CommandDataSetType, RequiredElement)
+	v.CommandDataSetType, err = d.GetCommandDataSetType()
 	if err != nil {
 		return nil, fmt.Errorf("cMoveRsp.decode: failed to decode CommandDataSetType: %w", err)
 	}
