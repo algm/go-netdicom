@@ -3,6 +3,7 @@
 package netdicom
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -24,6 +25,7 @@ type CMoveResult struct {
 }
 
 func handleCStore(
+	ctx context.Context,
 	cb CStoreCallback,
 	connState ConnectionState,
 	c *dimse.CStoreRq, data []byte,
@@ -31,6 +33,7 @@ func handleCStore(
 	status := dimse.Status{Status: dimse.StatusUnrecognizedOperation}
 	if cb != nil {
 		status = cb(
+			ctx,
 			connState,
 			cs.context.transferSyntaxUID,
 			c.AffectedSOPClassUID,
@@ -344,6 +347,7 @@ const DefaultMaxPDUSize = 4 << 20
 // header, followed by data. It should return either dimse.Success0 on success,
 // or one of CStoreStatus* error codes on errors.
 type CStoreCallback func(
+	ctx context.Context,
 	conn ConnectionState,
 	transferSyntaxUID string,
 	sopClassUID string,
@@ -489,13 +493,13 @@ func getConnState(conn net.Conn) (cs ConnectionState) {
 
 // RunProviderForConn starts threads for running a DICOM server on "conn". This
 // function returns immediately; "conn" will be cleaned up in the background.
-func RunProviderForConn(conn net.Conn, params ServiceProviderParams) {
+func RunProviderForConn(ctx context.Context, conn net.Conn, params ServiceProviderParams) {
 	upcallCh := make(chan upcallEvent, 128)
 	label := newUID("sc")
 	disp := newServiceDispatcher(label)
 	disp.registerCallback(dimse.CommandFieldCStoreRq,
 		func(msg dimse.Message, data []byte, cs *serviceCommandState) {
-			handleCStore(params.CStore, getConnState(conn), msg.(*dimse.CStoreRq), data, cs)
+			handleCStore(ctx, params.CStore, getConnState(conn), msg.(*dimse.CStoreRq), data, cs)
 		})
 	disp.registerCallback(dimse.CommandFieldCFindRq,
 		func(msg dimse.Message, data []byte, cs *serviceCommandState) {
@@ -522,18 +526,58 @@ func RunProviderForConn(conn net.Conn, params ServiceProviderParams) {
 }
 
 // Run listens to incoming connections, accepts them, and runs the DICOM
-// protocol. This function never returns.
-func (sp *ServiceProvider) Run() {
+// protocol. This function blocks until the context is cancelled.
+func (sp *ServiceProvider) Run(ctx context.Context) {
 	commandset.Init()
-	for {
-		conn, err := sp.listener.Accept()
-		if err != nil {
-			dicomlog.Vprintf(0, "dicom.serviceProvider(%s): Accept error: %v", sp.label, err)
-			continue
+
+	// Create a channel to handle graceful shutdown
+	connCh := make(chan net.Conn)
+	errCh := make(chan error)
+
+	// Start accepting connections in a goroutine
+	go func() {
+		for {
+			conn, err := sp.listener.Accept()
+			if err != nil {
+				errCh <- err
+				return
+			}
+			connCh <- conn
 		}
-		dicomlog.Vprintf(0, "dicom.serviceProvider(%s): Accepted connection %p (remote: %+v)", sp.label, conn, conn.RemoteAddr())
-		go func() { RunProviderForConn(conn, sp.params) }()
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			dicomlog.Vprintf(0, "dicom.serviceProvider(%s): Context cancelled, stopping server", sp.label)
+			sp.listener.Close() // Close listener to stop accepting new connections
+			return
+		case conn := <-connCh:
+			dicomlog.Vprintf(0, "dicom.serviceProvider(%s): Accepted connection %p (remote: %+v)", sp.label, conn, conn.RemoteAddr())
+			go func() { RunProviderForConn(ctx, conn, sp.params) }()
+		case err := <-errCh:
+			// Check if the error is due to listener being closed (during shutdown)
+			if ctx.Err() != nil {
+				dicomlog.Vprintf(0, "dicom.serviceProvider(%s): Accept terminated due to context cancellation", sp.label)
+				return
+			}
+			dicomlog.Vprintf(0, "dicom.serviceProvider(%s): Accept error: %v", sp.label, err)
+			// Don't return here, continue listening for connections
+		}
 	}
+}
+
+// RunForever listens to incoming connections, accepts them, and runs the DICOM
+// protocol. This function never returns and is provided for backward compatibility.
+// For new code, prefer using Run() with a context.Context for graceful shutdown.
+func (sp *ServiceProvider) RunForever() {
+	sp.Run(context.Background())
+}
+
+// Close closes the underlying listener, causing the server to stop accepting new connections.
+// Existing connections will continue to be served.
+func (sp *ServiceProvider) Close() error {
+	return sp.listener.Close()
 }
 
 // ListenAddr returns the TCP address that the server is listening on. It is the

@@ -130,6 +130,7 @@ The C-STORE server receives DICOM files from remote clients.
 package main
 
 import (
+    "context"
     "fmt"
     "log"
     "os"
@@ -156,17 +157,32 @@ func main() {
     }
 
     log.Println("DICOM C-STORE server started on port 11112")
-    provider.Run() // This blocks forever
+    
+    // Create context for graceful shutdown
+    ctx := context.Background()
+    provider.Run(ctx) // This blocks until context is cancelled
 }
 
 // C-STORE request handler
 func onCStoreRequest(
+    ctx context.Context,
     conn netdicom.ConnectionState,
     transferSyntaxUID string,
     sopClassUID string,
     sopInstanceUID string,
     data []byte) dimse.Status {
     
+    // Check if context is cancelled
+    select {
+    case <-ctx.Done():
+        log.Printf("C-STORE handler cancelled due to context")
+        return dimse.Status{
+            Status: dimse.StatusProcessingFailure,
+            ErrorComment: "Server shutting down",
+        }
+    default:
+    }
+
     log.Printf("Received C-STORE request:")
     log.Printf("  Transfer Syntax: %s", transferSyntaxUID)
     log.Printf("  SOP Class UID: %s", sopClassUID)
@@ -197,6 +213,122 @@ func onCStoreRequest(
         }
     }
     defer file.Close()
+
+### Graceful Shutdown Support
+
+The server now supports graceful shutdown using `context.Context`:
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "os"
+    "os/signal"
+    "syscall"
+    "time"
+    
+    "github.com/mlibanori/go-netdicom"
+    "github.com/mlibanori/go-netdicom/dimse"
+)
+
+func main() {
+    // Create server
+    params := netdicom.ServiceProviderParams{
+        AETitle: "STORAGE_SCP",
+        CStore:  onCStoreRequest,
+    }
+    
+    provider, err := netdicom.NewServiceProvider(params, ":11112")
+    if err != nil {
+        log.Fatal("Failed to create provider:", err)
+    }
+
+    // Create context with cancellation
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+
+    // Handle shutdown signals
+    sigCh := make(chan os.Signal, 1)
+    signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+    
+    go func() {
+        <-sigCh
+        log.Println("Received shutdown signal, stopping server...")
+        cancel() // Cancel context to stop server
+    }()
+
+    log.Println("DICOM server starting on port 11112")
+    log.Println("Press Ctrl+C to stop")
+    
+    // Run server with context
+    provider.Run(ctx)
+    log.Println("Server stopped")
+}
+
+func onCStoreRequest(
+    ctx context.Context,
+    conn netdicom.ConnectionState,
+    transferSyntaxUID, sopClassUID, sopInstanceUID string,
+    data []byte) dimse.Status {
+    
+    // Check if context is cancelled before processing
+    select {
+    case <-ctx.Done():
+        return dimse.Status{
+            Status: dimse.StatusProcessingFailure,
+            ErrorComment: "Server shutting down",
+        }
+    default:
+    }
+    
+    // Process the C-STORE request...
+    log.Printf("Processing C-STORE: %s", sopInstanceUID)
+    
+    // Your processing logic here
+    
+    return dimse.Success
+}
+```
+
+### Server Methods
+
+```go
+// Run with context (recommended)
+provider.Run(ctx)
+
+// Run forever (backward compatibility)
+provider.RunForever()
+
+// Close server manually
+err := provider.Close()
+```
+
+### Context Usage in Handlers
+
+All C-STORE handlers now receive a `context.Context` as the first parameter:
+
+```go
+func onCStoreRequest(
+    ctx context.Context,              // NEW: Context for cancellation
+    conn netdicom.ConnectionState,    // Connection state
+    transferSyntaxUID string,         // Transfer syntax
+    sopClassUID string,               // SOP Class UID
+    sopInstanceUID string,            // SOP Instance UID
+    data []byte) dimse.Status {       // DICOM data
+    
+    // Check for cancellation
+    if ctx.Err() != nil {
+        return dimse.Status{
+            Status: dimse.StatusProcessingFailure,
+            ErrorComment: "Operation cancelled",
+        }
+    }
+    
+    // Your handler logic here
+    return dimse.Success
+}
 
     // Write DICOM file with proper header
     encoder := dicomio.NewEncoderWithTransferSyntax(file, transferSyntaxUID)
