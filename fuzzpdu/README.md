@@ -1,9 +1,29 @@
-This directory contains fuzz tests. It uses go-fuzz. Visit
-https://github.com/dvyukov/go-fuzz and install two packages, go-fuzz-build and go-fuzz.
-Then run:
+# PDU Fuzzing
 
+This directory contains fuzz tests for PDU (Protocol Data Unit) parsing using **native Go fuzzing** (Go 1.18+).
+
+## Running the Fuzzer
+
+```bash
+# Run the PDU fuzzer
+go test -fuzz=FuzzPDU .
+
+# Run with specific time limit
+go test -fuzz=FuzzPDU -fuzztime=30s .
+
+# Run with maximum CPU cores
+go test -fuzz=FuzzPDU -fuzztime=1m .
 ```
-go-fuzz-build github.com/yasushi-saito/go-netdicom/fuzzpdu
-mkdir -p /tmp/fuzzpdu
-go-fuzz -bin fuzzpdu-fuzz.zip -workdir /tmp/fuzzpdu
-```
+
+## About
+
+The fuzzer tests PDU parsing by:
+1. Feeding random data to the PDU parser
+2. Testing both PDU format and DICOM dataset parsing paths
+3. Discovering crashes and hangs in the parsing logic
+
+## Legacy go-fuzz (DEPRECATED)
+
+**⚠️ WARNING: go-fuzz is deprecated since Go 1.18 and no longer maintained.**
+
+The old go-fuzz approach is no longer recommended. Use the native fuzzing above instead.

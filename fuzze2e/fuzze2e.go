@@ -1,9 +1,10 @@
 package fuzze2e
 
 import (
-	"flag"
 	"log"
 	"net"
+	"os"
+	"path/filepath"
 
 	"github.com/grailbio/go-dicom"
 	"github.com/mlibanori/go-netdicom"
@@ -43,31 +44,45 @@ func startServer(faults netdicom.FaultInjector) net.Listener {
 	return listener
 }
 
-func runClient(serverAddr string, faults netdicom.FaultInjector) {
-	dataset, err := dicom.ReadDataSetFromFile(
-		"../testdata/reportsi.dcm",
-		dicom.ReadOptions{})
+func runClient(serverAddr string, faults netdicom.FaultInjector) error {
+	// Find the test data file
+	testFile := "../testdata/reportsi.dcm"
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		// Try alternative path
+		testFile = "testdata/reportsi.dcm"
+		if _, err := os.Stat(testFile); os.IsNotExist(err) {
+			// Try absolute path from current working directory
+			wd, _ := os.Getwd()
+			testFile = filepath.Join(wd, "..", "testdata", "reportsi.dcm")
+			if _, err := os.Stat(testFile); os.IsNotExist(err) {
+				return err
+			}
+		}
+	}
+
+	dataset, err := dicom.ReadDataSetFromFile(testFile, dicom.ReadOptions{})
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	netdicom.SetUserFaultInjector(faults)
 	su, err := netdicom.NewServiceUser(netdicom.ServiceUserParams{SOPClasses: sopclass.StorageClasses})
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	su.Connect(serverAddr)
 	err = su.CStore(dataset)
 	log.Printf("Store done with status: %v", err)
 	su.Release()
-}
-
-func init() {
-	flag.Parse()
+	return nil
 }
 
 func Fuzz(data []byte) int {
 	listener := startServer(netdicom.NewFuzzFaultInjector(data))
-	runClient(listener.Addr().String(), netdicom.NewFuzzFaultInjector(data))
-	listener.Close()
+	defer listener.Close()
+	err := runClient(listener.Addr().String(), netdicom.NewFuzzFaultInjector(data))
+	if err != nil {
+		// Don't panic during fuzzing, just log and continue
+		log.Printf("Client error during fuzzing: %v", err)
+	}
 	return 0
 }

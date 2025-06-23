@@ -1,6 +1,6 @@
 module github.com/mlibanori/go-netdicom
 
-go 1.24.1
+go 1.23.8
 
 require (
 	github.com/grailbio/go-dicom v0.0.0-20211105193521-b0e216a1c5cd
