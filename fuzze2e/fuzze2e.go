@@ -1,6 +1,7 @@
 package fuzze2e
 
 import (
+	"context"
 	"log"
 	"net"
 	"os"
@@ -22,6 +23,7 @@ func startServer(faults netdicom.FaultInjector) net.Listener {
 		// TODO(saito) test w/ small PDU.
 		params := netdicom.ServiceProviderParams{
 			CStore: func(
+				ctx context.Context,
 				connState netdicom.ConnectionState,
 				transferSyntaxUID string,
 				sopClassUID string,
@@ -38,7 +40,7 @@ func startServer(faults netdicom.FaultInjector) net.Listener {
 				break
 			}
 			log.Printf("Accepted connection %v", conn)
-			netdicom.RunProviderForConn(conn, params)
+			netdicom.RunProviderForConn(context.Background(), conn, params)
 		}
 	}()
 	return listener

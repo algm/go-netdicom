@@ -7,6 +7,7 @@ package main
 // It starts a DICOM server and serves files under <directory>.
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"flag"
@@ -354,7 +355,7 @@ func main() {
 			filter []*dicom.Element, ch chan netdicom.CMoveResult) {
 			ss.onCMoveOrCGet(transferSyntaxUID, sopClassUID, filter, ch)
 		},
-		CStore: func(connState netdicom.ConnectionState, transferSyntaxUID string,
+		CStore: func(ctx context.Context, connState netdicom.ConnectionState, transferSyntaxUID string,
 			sopClassUID string,
 			sopInstanceUID string,
 			data []byte) dimse.Status {
@@ -366,5 +367,5 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	sp.Run()
+	sp.Run(context.Background())
 }
