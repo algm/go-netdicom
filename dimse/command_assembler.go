@@ -3,6 +3,8 @@ package dimse
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/mlibanori/go-netdicom/pdu"
 	"github.com/suyashkumar/dicom"
@@ -14,10 +16,11 @@ type CommandAssembler struct {
 	contextID      byte
 	commandBytes   []byte
 	command        Message
-	dataBytes      []byte
 	readAllCommand bool
 
 	readAllData bool
+
+	dataCmd *DimseCommand // temporary file holder for data set
 }
 
 // AddDataPDU is to be called for each P_DATA_TF PDU received from the
@@ -40,7 +43,18 @@ func (commandAssembler *CommandAssembler) AddDataPDU(pdu *pdu.PDataTf) (byte, Me
 				commandAssembler.readAllCommand = true
 			}
 		} else {
-			commandAssembler.dataBytes = append(commandAssembler.dataBytes, item.Value...)
+			// Data fragment. Persist to temporary file using DimseCommand.
+			if commandAssembler.dataCmd == nil {
+				tmpFile, err := os.CreateTemp("", "dimse_data_*")
+				if err != nil {
+					return 0, nil, nil, fmt.Errorf("failed to create temp file for DIMSE data: %w", err)
+				}
+				tmpFile.Close()
+				commandAssembler.dataCmd = NewDimseCommand(tmpFile.Name())
+			}
+			if err := commandAssembler.dataCmd.AppendData(item.Value); err != nil {
+				return 0, nil, nil, fmt.Errorf("failed to append data fragment: %w", err)
+			}
 			if item.Last {
 				if commandAssembler.readAllData {
 					return 0, nil, nil, fmt.Errorf("P_DATA_TF: found >1 data chunks with the Last bit set")
@@ -49,9 +63,13 @@ func (commandAssembler *CommandAssembler) AddDataPDU(pdu *pdu.PDataTf) (byte, Me
 			}
 		}
 	}
+
+	// Wait until full command received
 	if !commandAssembler.readAllCommand {
 		return 0, nil, nil, nil
 	}
+
+	// Decode command once.
 	if commandAssembler.command == nil {
 		ioReader := bytes.NewReader(commandAssembler.commandBytes)
 		parser, err := dicom.Parse(ioReader, int64(ioReader.Len()), nil, dicom.SkipPixelData(), dicom.SkipMetadataReadOnNewParserInit())
@@ -63,13 +81,28 @@ func (commandAssembler *CommandAssembler) AddDataPDU(pdu *pdu.PDataTf) (byte, Me
 			return 0, nil, nil, err
 		}
 	}
+
+	// If command expects data but we haven't read all yet, wait.
 	if commandAssembler.command.HasData() && !commandAssembler.readAllData {
 		return 0, nil, nil, nil
 	}
+
+	// Prepare return values.
 	contextID := commandAssembler.contextID
 	command := commandAssembler.command
-	dataBytes := commandAssembler.dataBytes
+
+	var dataBytes []byte
+	if commandAssembler.command.HasData() {
+		if commandAssembler.dataCmd != nil {
+			if r := commandAssembler.dataCmd.ReadData(); r != nil {
+				dataBytes, _ = io.ReadAll(r)
+			}
+			_ = commandAssembler.dataCmd.Ack() // cleanup file; ignore error
+		}
+	}
+
+	// Reset assembler for next message.
 	*commandAssembler = CommandAssembler{}
+
 	return contextID, command, dataBytes, nil
-	// TODO(saito) Verify that there's no unread items after the last command&data.
 }

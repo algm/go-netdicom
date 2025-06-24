@@ -2,6 +2,7 @@ package netdicom
 
 import (
 	"context"
+	"io"
 	"log"
 	"testing"
 	"time"
@@ -19,7 +20,8 @@ func testCStoreHandler(
 	transferSyntaxUID string,
 	sopClassUID string,
 	sopInstanceUID string,
-	data []byte) dimse.Status {
+	dataReader io.Reader,
+	dataSize int64) dimse.Status {
 
 	// Check if context is cancelled
 	select {
@@ -33,7 +35,7 @@ func testCStoreHandler(
 	}
 
 	log.Printf("Processing C-STORE: transferSyntax=%s, sopClass=%s, sopInstance=%s, dataSize=%d bytes",
-		transferSyntaxUID, sopClassUID, sopInstanceUID, len(data))
+		transferSyntaxUID, sopClassUID, sopInstanceUID, dataSize)
 
 	return dimse.Success
 }
@@ -128,7 +130,8 @@ func TestContextCancellationInHandler(t *testing.T) {
 		transferSyntaxUID string,
 		sopClassUID string,
 		sopInstanceUID string,
-		data []byte) dimse.Status {
+		dataReader io.Reader,
+		dataSize int64) dimse.Status {
 
 		handlerCalled = true
 

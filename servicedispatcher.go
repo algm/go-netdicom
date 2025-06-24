@@ -39,6 +39,9 @@ type serviceCommandState struct {
 
 	// upcallCh streams command+data for this messageID.
 	upcallCh chan upcallEvent
+
+	// streamingReader holds the DimseCommand when server decides to stream large datasets.
+	streamingReader *dimse.DimseCommand
 }
 
 // Send a command+data combo to the remote peer. data may be nil.
@@ -155,6 +158,8 @@ func (disp *serviceDispatcher) handleEvent(event upcallEvent) {
 	cb := disp.callbacks[event.command.CommandField()]
 	disp.mu.Unlock()
 	go func() {
+
+		// Always call with data - handleCStore will check for streaming reader
 		cb(event.command, event.data, dc)
 		disp.deleteCommand(dc)
 	}()

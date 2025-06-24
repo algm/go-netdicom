@@ -2,6 +2,7 @@ package fuzze2e
 
 import (
 	"context"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -28,7 +29,8 @@ func startServer(faults netdicom.FaultInjector) net.Listener {
 				transferSyntaxUID string,
 				sopClassUID string,
 				sopInstanceUID string,
-				data []byte) dimse.Status {
+				dataReader io.Reader,
+				dataSize int64) dimse.Status {
 				return dimse.Status{Status: dimse.StatusSuccess}
 			},
 		}

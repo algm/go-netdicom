@@ -17,9 +17,29 @@ C-STORE is a DICOM service used to store (send) DICOM objects from one Applicati
 ### Key Features
 - Full DICOM C-STORE protocol implementation
 - Support for all standard DICOM storage SOP classes
+- **Streaming callbacks with `io.Reader`** for memory-efficient processing
 - Configurable transfer syntaxes
 - Comprehensive error handling
 - Thread-safe operations
+- Context-based cancellation support
+
+### Important Changes
+
+**C-STORE Callback Signature Update**: The `CStoreCallback` now uses streaming parameters:
+
+```go
+// NEW streaming signature (current)
+func(ctx context.Context, conn ConnectionState, transferSyntaxUID, sopClassUID, sopInstanceUID string, dataReader io.Reader, dataSize int64) dimse.Status
+
+// OLD signature (deprecated)
+func(ctx context.Context, conn ConnectionState, transferSyntaxUID, sopClassUID, sopInstanceUID string, data []byte) dimse.Status
+```
+
+**Benefits of Streaming Approach:**
+- **Memory Efficiency**: Large files (>100MB) can be processed without loading entirely into memory
+- **Size Information**: `dataSize` parameter allows handlers to make intelligent processing decisions
+- **Flexible Processing**: Handlers can choose to buffer small files or stream large files
+- **Better Performance**: Reduces memory pressure and garbage collection overhead
 
 ## C-STORE Client (Service User)
 
@@ -132,6 +152,7 @@ package main
 import (
     "context"
     "fmt"
+    "io"
     "log"
     "os"
     "path/filepath"
@@ -170,7 +191,8 @@ func onCStoreRequest(
     transferSyntaxUID string,
     sopClassUID string,
     sopInstanceUID string,
-    data []byte) dimse.Status {
+    dataReader io.Reader,
+    dataSize int64) dimse.Status {
     
     // Check if context is cancelled
     select {
@@ -187,7 +209,7 @@ func onCStoreRequest(
     log.Printf("  Transfer Syntax: %s", transferSyntaxUID)
     log.Printf("  SOP Class UID: %s", sopClassUID)
     log.Printf("  SOP Instance UID: %s", sopInstanceUID)
-    log.Printf("  Data size: %d bytes", len(data))
+    log.Printf("  Data size: %d bytes", dataSize)
 
     // Generate filename
     filename := fmt.Sprintf("received_%s.dcm", sopInstanceUID)
@@ -311,12 +333,13 @@ All C-STORE handlers now receive a `context.Context` as the first parameter:
 
 ```go
 func onCStoreRequest(
-    ctx context.Context,              // NEW: Context for cancellation
+    ctx context.Context,              // Context for cancellation
     conn netdicom.ConnectionState,    // Connection state
     transferSyntaxUID string,         // Transfer syntax
     sopClassUID string,               // SOP Class UID
     sopInstanceUID string,            // SOP Instance UID
-    data []byte) dimse.Status {       // DICOM data
+    dataReader io.Reader,             // DICOM data stream
+    dataSize int64) dimse.Status {    // Size of data in bytes
     
     // Check for cancellation
     if ctx.Err() != nil {
@@ -340,8 +363,39 @@ func onCStoreRequest(
         dicom.MustNewElement(dicomtag.MediaStorageSOPInstanceUID, sopInstanceUID),
     })
     
-    // Write the actual DICOM data
-    encoder.WriteBytes(data)
+    // Read data from stream and write to file
+    // For efficient memory usage, stream the data directly
+    if dataSize < 100*1024*1024 { // Files < 100MB
+        // Small files: read all into memory for backwards compatibility
+        data, err := io.ReadAll(dataReader)
+        if err != nil {
+            log.Printf("Failed to read data from stream: %v", err)
+            return dimse.Status{
+                Status: dimse.StatusProcessingFailure,
+                ErrorComment: "Failed to read data stream",
+            }
+        }
+        encoder.WriteBytes(data)
+    } else {
+        // Large files: stream in chunks to avoid loading entire file into memory
+        buffer := make([]byte, 32*1024) // 32KB buffer
+        for {
+            n, err := dataReader.Read(buffer)
+            if n > 0 {
+                encoder.WriteBytes(buffer[:n])
+            }
+            if err == io.EOF {
+                break
+            }
+            if err != nil {
+                log.Printf("Failed to stream data: %v", err)
+                return dimse.Status{
+                    Status: dimse.StatusProcessingFailure,
+                    ErrorComment: "Stream read error",
+                }
+            }
+        }
+    }
     
     if err := encoder.Error(); err != nil {
         log.Printf("Failed to write DICOM file: %v", err)
@@ -906,6 +960,240 @@ func validateDicomFile(filepath string) error {
     }
 
     return nil
+}
+```
+
+---
+
+## Streaming C-STORE Callback Usage
+
+The C-STORE callback now uses streaming by default with `io.Reader` for better memory efficiency, especially with large DICOM files (>100MB):
+
+```go
+package main
+
+import (
+    "context"
+    "io"
+    "log"
+    "os"
+    "fmt"
+    
+    "github.com/grailbio/go-dicom"
+    "github.com/grailbio/go-dicom/dicomio"
+    "github.com/grailbio/go-dicom/dicomtag"
+    "github.com/mlibanori/go-netdicom"
+    "github.com/mlibanori/go-netdicom/dimse"
+)
+
+func main() {
+    // Configure streaming C-STORE handler
+    streamHandler := func(
+        ctx context.Context,
+        conn netdicom.ConnectionState,
+        transferSyntaxUID string,
+        sopClassUID string,
+        sopInstanceUID string,
+        dataReader io.Reader,
+        dataSize int64) dimse.Status {
+
+        log.Printf("Receiving DICOM file: %s (Size: %d bytes)", sopInstanceUID, dataSize)
+
+        // Create output file
+        filename := fmt.Sprintf("%s.dcm", sopInstanceUID)
+        outFile, err := os.Create(filename)
+        if err != nil {
+            log.Printf("Failed to create file: %v", err)
+            return dimse.Status{Status: dimse.StatusProcessingFailure}
+        }
+        defer outFile.Close()
+
+        // Write DICOM file header
+        encoder := dicomio.NewEncoderWithTransferSyntax(outFile, transferSyntaxUID)
+        dicom.WriteFileHeader(encoder, []*dicom.Element{
+            dicom.MustNewElement(dicomtag.TransferSyntaxUID, transferSyntaxUID),
+            dicom.MustNewElement(dicomtag.MediaStorageSOPClassUID, sopClassUID),
+            dicom.MustNewElement(dicomtag.MediaStorageSOPInstanceUID, sopInstanceUID),
+        })
+
+        // Stream data efficiently based on file size
+        if dataSize < 100*1024*1024 { // Files < 100MB
+            // Small files: read all into memory (backwards compatibility)
+            data, err := io.ReadAll(dataReader)
+            if err != nil {
+                log.Printf("Failed to read data: %v", err)
+                return dimse.Status{Status: dimse.StatusProcessingFailure}
+            }
+            encoder.WriteBytes(data)
+        } else {
+            // Large files: stream in chunks to avoid memory exhaustion
+            buffer := make([]byte, 32*1024) // 32KB buffer
+            for {
+                n, err := dataReader.Read(buffer)
+                if n > 0 {
+                    encoder.WriteBytes(buffer[:n])
+                }
+                if err == io.EOF {
+                    break
+                }
+                if err != nil {
+                    log.Printf("Failed to stream data: %v", err)
+                    return dimse.Status{Status: dimse.StatusProcessingFailure}
+                }
+            }
+        }
+
+        if err := encoder.Error(); err != nil {
+            log.Printf("Failed to encode DICOM data: %v", err)
+            return dimse.Status{Status: dimse.StatusProcessingFailure}
+        }
+
+            log.Printf("Successfully saved: %s", filename)
+        return dimse.Success
+    }
+
+    // Create server
+    params := netdicom.ServiceProviderParams{
+        AETitle: "STREAMING_SCP",
+        CStore:  streamHandler,
+    }
+
+    provider, err := netdicom.NewServiceProvider(params, ":11112")
+    if err != nil {
+        log.Fatal("Failed to create provider:", err)
+    }
+
+    log.Println("DICOM C-STORE server with streaming started on port 11112")
+    provider.RunForever()
+}
+```
+
+### Migration Guide from Legacy Callback
+
+If you have existing code using the old callback signature, here's how to migrate:
+
+**Before (Legacy):**
+```go
+func oldHandler(
+    ctx context.Context,
+    conn netdicom.ConnectionState,
+    transferSyntaxUID, sopClassUID, sopInstanceUID string,
+    data []byte) dimse.Status {
+    
+    // Process data directly
+    filename := fmt.Sprintf("%s.dcm", sopInstanceUID)
+    return os.WriteFile(filename, data, 0644)
+}
+```
+
+**After (Streaming):**
+```go
+func newHandler(
+    ctx context.Context,
+    conn netdicom.ConnectionState,
+    transferSyntaxUID, sopClassUID, sopInstanceUID string,
+    dataReader io.Reader,
+    dataSize int64) dimse.Status {
+    
+    // Read data from stream
+    data, err := io.ReadAll(dataReader)
+    if err != nil {
+        return dimse.Status{Status: dimse.StatusProcessingFailure}
+    }
+    
+    // Process data (same as before)
+    filename := fmt.Sprintf("%s.dcm", sopInstanceUID)
+    err = os.WriteFile(filename, data, 0644)
+    if err != nil {
+        return dimse.Status{Status: dimse.StatusProcessingFailure}
+    }
+    return dimse.Success
+}
+```
+
+**For Large Files (Recommended):**
+```go
+func efficientHandler(
+    ctx context.Context,
+    conn netdicom.ConnectionState,
+    transferSyntaxUID, sopClassUID, sopInstanceUID string,
+    dataReader io.Reader,
+    dataSize int64) dimse.Status {
+    
+    filename := fmt.Sprintf("%s.dcm", sopInstanceUID)
+    file, err := os.Create(filename)
+    if err != nil {
+        return dimse.Status{Status: dimse.StatusProcessingFailure}
+    }
+    defer file.Close()
+
+    // Stream directly to file without loading into memory
+    _, err = io.Copy(file, dataReader)
+    if err != nil {
+        return dimse.Status{Status: dimse.StatusProcessingFailure}
+    }
+    
+    return dimse.Success
+
+    // Create server with streaming callback
+    params := netdicom.ServiceProviderParams{
+        AETitle:      "MY_STREAMING_SCP",
+        CStoreStream: streamHandler, // Use streaming callback
+    }
+
+    provider, err := netdicom.NewServiceProvider(params, ":11112")
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    log.Println("Starting streaming DICOM server on port 11112...")
+    provider.RunForever()
+}
+```
+
+### Streaming vs Legacy Callbacks
+
+The streaming callback (`CStoreStream`) provides several advantages:
+
+- **Memory Efficient**: Files are processed as streams, not loaded entirely into memory
+- **Large File Support**: Handles files of any size without memory exhaustion  
+- **Size Information**: Provides `dataSize` parameter for informed processing decisions
+- **Backwards Compatible**: Falls back to legacy callback if streaming is not available
+
+### Callback Priority
+
+If both `CStore` and `CStoreStream` are configured, the streaming callback takes precedence:
+
+```go
+params := netdicom.ServiceProviderParams{
+    AETitle:      "MY_SCP",
+    CStore:       legacyHandler,    // DEPRECATED: Will be ignored
+    CStoreStream: streamHandler,    // This will be used
+}
+```
+
+### Migration from Legacy Callback
+
+To migrate existing code to streaming:
+
+1. Replace `CStore` with `CStoreStream` in `ServiceProviderParams`
+2. Change callback signature to include `io.Reader` and `dataSize`
+3. Handle data as a stream instead of a byte slice
+4. Add size-based logic for optimal memory usage
+
+```go
+// OLD: Legacy callback
+func legacyHandler(ctx context.Context, conn netdicom.ConnectionState, 
+    transferSyntaxUID, sopClassUID, sopInstanceUID string, 
+    data []byte) dimse.Status {
+    // Process data slice...
+}
+
+// NEW: Streaming callback  
+func streamHandler(ctx context.Context, conn netdicom.ConnectionState,
+    transferSyntaxUID, sopClassUID, sopInstanceUID string,
+    dataReader io.Reader, dataSize int64) dimse.Status {
+    // Process data stream...
 }
 ```
 

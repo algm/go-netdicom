@@ -12,10 +12,10 @@ import (
 	"crypto/x509"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -63,55 +63,46 @@ func (ss *server) onCStore(
 	transferSyntaxUID string,
 	sopClassUID string,
 	sopInstanceUID string,
-	data []byte) dimse.Status {
+	dataReader io.Reader,
+	dataSize int64) dimse.Status {
+
+	// Read all data from the reader
+	data, err := io.ReadAll(dataReader)
+	if err != nil {
+		log.Printf("Failed to read data from stream: %v", err)
+		return dimse.Status{Status: dimse.CStoreCannotUnderstand}
+	}
+
+	log.Printf("Received C-STORE: sopInstanceUID: %s, dataSize: %d bytes", sopInstanceUID, dataSize)
+
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
+
+	path := filepath.Join(*outputFlag, fmt.Sprintf("dcm_%s_%06d.dcm", sopInstanceUID, ss.pathSeq))
 	ss.pathSeq++
-	path := path.Join(*outputFlag, fmt.Sprintf("image%04d.dcm", ss.pathSeq))
-	out, err := os.Create(path)
+
+	outFile, err := os.Create(path)
 	if err != nil {
-		dirPath := filepath.Dir(path)
-		err := os.MkdirAll(dirPath, 0755)
-		if err != nil {
-			return dimse.Status{Status: dimse.StatusNotAuthorized, ErrorComment: err.Error()}
-		}
-		out, err = os.Create(path)
-		if err != nil {
-			log.Printf("%s: create: %v", path, err)
-			return dimse.Status{Status: dimse.StatusNotAuthorized, ErrorComment: err.Error()}
-		}
+		log.Printf("Failed to create %s: %v", path, err)
+		return dimse.Status{Status: dimse.CStoreCannotUnderstand}
 	}
-	defer func() {
-		if out != nil {
-			out.Close()
-		}
-	}()
-	e := dicomio.NewEncoderWithTransferSyntax(out, transferSyntaxUID)
-	dicom.WriteFileHeader(e,
-		[]*dicom.Element{
-			dicom.MustNewElement(dicomtag.TransferSyntaxUID, transferSyntaxUID),
-			dicom.MustNewElement(dicomtag.MediaStorageSOPClassUID, sopClassUID),
-			dicom.MustNewElement(dicomtag.MediaStorageSOPInstanceUID, sopInstanceUID),
-		})
-	e.WriteBytes(data)
-	if err := e.Error(); err != nil {
-		log.Printf("%s: write: %v", path, err)
-		return dimse.Status{Status: dimse.StatusNotAuthorized, ErrorComment: err.Error()}
+	defer outFile.Close()
+
+	// Write DICOM file with proper header
+	encoder := dicomio.NewEncoderWithTransferSyntax(outFile, transferSyntaxUID)
+	dicom.WriteFileHeader(encoder, []*dicom.Element{
+		dicom.MustNewElement(dicomtag.TransferSyntaxUID, transferSyntaxUID),
+		dicom.MustNewElement(dicomtag.MediaStorageSOPClassUID, sopClassUID),
+		dicom.MustNewElement(dicomtag.MediaStorageSOPInstanceUID, sopInstanceUID),
+	})
+	encoder.WriteBytes(data)
+
+	if err := encoder.Error(); err != nil {
+		log.Printf("Failed to encode DICOM file %s: %v", path, err)
+		return dimse.Status{Status: dimse.CStoreCannotUnderstand}
 	}
-	err = out.Close()
-	out = nil
-	if err != nil {
-		log.Printf("%s: close %s", path, err)
-		return dimse.Status{Status: dimse.StatusNotAuthorized, ErrorComment: err.Error()}
-	}
-	log.Printf("C-STORE: Created %v", path)
-	// Register the new file in ss.datasets.
-	ds, err := dicom.ReadDataSetFromFile(path, dicom.ReadOptions{DropPixelData: true})
-	if err != nil {
-		log.Printf("%s: failed to parse dicom file: %v", path, err)
-	} else {
-		ss.datasets[path] = ds
-	}
+
+	log.Printf("Saved file: %s", path)
 	return dimse.Success
 }
 
@@ -358,8 +349,9 @@ func main() {
 		CStore: func(ctx context.Context, connState netdicom.ConnectionState, transferSyntaxUID string,
 			sopClassUID string,
 			sopInstanceUID string,
-			data []byte) dimse.Status {
-			return ss.onCStore(transferSyntaxUID, sopClassUID, sopInstanceUID, data)
+			dataReader io.Reader,
+			dataSize int64) dimse.Status {
+			return ss.onCStore(transferSyntaxUID, sopClassUID, sopInstanceUID, dataReader, dataSize)
 		},
 		TLSConfig: tlsConfig,
 	}

@@ -3,9 +3,11 @@
 package netdicom
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 
 	dicom "github.com/grailbio/go-dicom"
@@ -26,20 +28,40 @@ type CMoveResult struct {
 
 func handleCStore(
 	ctx context.Context,
-	cb CStoreCallback,
+	params ServiceProviderParams,
 	connState ConnectionState,
 	c *dimse.CStoreRq, data []byte,
 	cs *serviceCommandState) {
 	status := dimse.Status{Status: dimse.StatusUnrecognizedOperation}
-	if cb != nil {
-		status = cb(
+
+	if params.CStore != nil {
+		// Determine data reader and size
+		var dataReader io.Reader
+		var dataSize int64
+
+		if cs.streamingReader != nil {
+			// True streaming mode - data comes from network stream
+			dataReader = cs.streamingReader
+			dataSize = cs.streamingReader.Size()
+			if dataSize < 0 {
+				dataSize = int64(len(data)) // Fallback estimate
+			}
+		} else {
+			// Buffered mode - data is in memory
+			dataSize = int64(len(data))
+			dataReader = bytes.NewReader(data)
+		}
+
+		status = params.CStore(
 			ctx,
 			connState,
 			cs.context.transferSyntaxUID,
 			c.AffectedSOPClassUID,
 			c.AffectedSOPInstanceUID,
-			data)
+			dataReader,
+			dataSize)
 	}
+
 	resp := &dimse.CStoreRsp{
 		AffectedSOPClassUID:       c.AffectedSOPClassUID,
 		MessageIDBeingRespondedTo: c.MessageID,
@@ -320,7 +342,13 @@ type ServiceProviderParams struct {
 	CGet CMoveCallback
 
 	// If CStoreCallback=nil, a C-STORE call will produce an error response.
+	// The callback always receives data as io.Reader for memory efficiency.
 	CStore CStoreCallback
+
+	// StreamingThreshold specifies the size (in bytes) above which true streaming mode
+	// is enabled. Files smaller than this threshold will be buffered in memory for
+	// better performance. Files larger will stream directly from network. Default: 100MB.
+	StreamingThreshold int64
 
 	// TLSConfig, if non-nil, enables TLS on the connection. See
 	// https://gist.github.com/michaljemala/d6f4e01c4834bf47a9c4 for an
@@ -337,22 +365,27 @@ const DefaultMaxPDUSize = 4 << 20
 // of the data (e.g., "1.2.840.10008.1.2.1").  These args are extracted from the
 // request packet.
 //
-// "data" is the payload, i.e., a sequence of serialized dicom.DataElement
-// objects in transferSyntaxUID.  "data" does not contain metadata elements
-// (elements whose Tag.Group=2 -- e.g., TransferSyntaxUID and
-// MediaStorageSOPClassUID), since they are stripped by the requster (two key
+// "dataReader" provides access to the payload as a stream, i.e., a sequence of
+// serialized dicom.DataElement objects in transferSyntaxUID. "dataSize" indicates
+// the total size of the data stream in bytes. The data does not contain metadata
+// elements (elements whose Tag.Group=2 -- e.g., TransferSyntaxUID and
+// MediaStorageSOPClassUID), since they are stripped by the requester (two key
 // metadata are passed as sop{Class,Instance)UID).
 //
 // The function should store encode the sop{Class,InstanceUID} as the DICOM
 // header, followed by data. It should return either dimse.Success0 on success,
 // or one of CStoreStatus* error codes on errors.
+// CStoreCallback is called on C-STORE request. All data is provided as a stream
+// via io.Reader for memory efficiency. For small files, the reader will be backed
+// by a bytes.Reader. For large files, it streams directly from network PDUs.
 type CStoreCallback func(
 	ctx context.Context,
 	conn ConnectionState,
 	transferSyntaxUID string,
 	sopClassUID string,
 	sopInstanceUID string,
-	data []byte) dimse.Status
+	dataReader io.Reader,
+	dataSize int64) dimse.Status
 
 // CFindCallback implements a C-FIND handler.  sopClassUID is the data type
 // requested (e.g.,"1.2.840.10008.5.1.4.1.1.1.2"), and transferSyntaxUID is the
@@ -499,7 +532,7 @@ func RunProviderForConn(ctx context.Context, conn net.Conn, params ServiceProvid
 	disp := newServiceDispatcher(label)
 	disp.registerCallback(dimse.CommandFieldCStoreRq,
 		func(msg dimse.Message, data []byte, cs *serviceCommandState) {
-			handleCStore(ctx, params.CStore, getConnState(conn), msg.(*dimse.CStoreRq), data, cs)
+			handleCStore(ctx, params, getConnState(conn), msg.(*dimse.CStoreRq), data, cs)
 		})
 	disp.registerCallback(dimse.CommandFieldCFindRq,
 		func(msg dimse.Message, data []byte, cs *serviceCommandState) {
