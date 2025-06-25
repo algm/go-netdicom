@@ -3,7 +3,6 @@ package dimse
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/mlibanori/go-netdicom/pdu"
@@ -27,7 +26,7 @@ type CommandAssembler struct {
 // network. If the fragment is marked as the last one, AddDataPDU returns
 // <SOPUID, TransferSyntaxUID, payload, nil>.  If it needs more fragments, it
 // returns <"", "", nil, nil>.  On error, it returns a non-nil error.
-func (commandAssembler *CommandAssembler) AddDataPDU(pdu *pdu.PDataTf) (byte, Message, []byte, error) {
+func (commandAssembler *CommandAssembler) AddDataPDU(pdu *pdu.PDataTf) (byte, Message, *DimseCommand, error) {
 	for _, item := range pdu.Items {
 		if commandAssembler.contextID == 0 {
 			commandAssembler.contextID = item.ContextID
@@ -91,18 +90,10 @@ func (commandAssembler *CommandAssembler) AddDataPDU(pdu *pdu.PDataTf) (byte, Me
 	contextID := commandAssembler.contextID
 	command := commandAssembler.command
 
-	var dataBytes []byte
-	if commandAssembler.command.HasData() {
-		if commandAssembler.dataCmd != nil {
-			if r := commandAssembler.dataCmd.ReadData(); r != nil {
-				dataBytes, _ = io.ReadAll(r)
-			}
-			_ = commandAssembler.dataCmd.Ack() // cleanup file; ignore error
-		}
-	}
+	dc := commandAssembler.dataCmd
 
 	// Reset assembler for next message.
 	*commandAssembler = CommandAssembler{}
 
-	return contextID, command, dataBytes, nil
+	return contextID, command, dc, nil
 }

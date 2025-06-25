@@ -66,20 +66,12 @@ func (ss *server) onCStore(
 	dataReader io.Reader,
 	dataSize int64) dimse.Status {
 
-	// Read all data from the reader
-	data, err := io.ReadAll(dataReader)
-	if err != nil {
-		log.Printf("Failed to read data from stream: %v", err)
-		return dimse.Status{Status: dimse.CStoreCannotUnderstand}
-	}
-
 	log.Printf("Received C-STORE: sopInstanceUID: %s, dataSize: %d bytes", sopInstanceUID, dataSize)
 
 	ss.mu.Lock()
-	defer ss.mu.Unlock()
-
-	path := filepath.Join(*outputFlag, fmt.Sprintf("dcm_%s_%06d.dcm", sopInstanceUID, ss.pathSeq))
+	path := filepath.Join(*outputFlag, fmt.Sprintf("**dcm_%s_%06d.dcm", sopInstanceUID, ss.pathSeq))
 	ss.pathSeq++
+	ss.mu.Unlock()
 
 	outFile, err := os.Create(path)
 	if err != nil {
@@ -88,21 +80,28 @@ func (ss *server) onCStore(
 	}
 	defer outFile.Close()
 
-	// Write DICOM file with proper header
+	// 1. Write the DICOM file meta-information header (small, fits in memory)
 	encoder := dicomio.NewEncoderWithTransferSyntax(outFile, transferSyntaxUID)
 	dicom.WriteFileHeader(encoder, []*dicom.Element{
 		dicom.MustNewElement(dicomtag.TransferSyntaxUID, transferSyntaxUID),
 		dicom.MustNewElement(dicomtag.MediaStorageSOPClassUID, sopClassUID),
 		dicom.MustNewElement(dicomtag.MediaStorageSOPInstanceUID, sopInstanceUID),
 	})
-	encoder.WriteBytes(data)
-
 	if err := encoder.Error(); err != nil {
-		log.Printf("Failed to encode DICOM file %s: %v", path, err)
+		log.Printf("Failed to write file meta information: %v", err)
 		return dimse.Status{Status: dimse.CStoreCannotUnderstand}
 	}
 
-	log.Printf("Saved file: %s", path)
+	// 2. Stream the incoming dataset directly to disk to avoid excessive memory use.
+	written, err := io.Copy(outFile, dataReader)
+	if err != nil {
+		outFile.Close()
+		_ = os.Remove(path) // delete partial file
+		log.Printf("Failed to copy dataset to %s: %v", path, err)
+		return dimse.Status{Status: dimse.CStoreOutOfResources, ErrorComment: err.Error()}
+	}
+
+	log.Printf("Saved file: %s (%d bytes)", path, written)
 	return dimse.Success
 }
 
@@ -292,6 +291,10 @@ func main() {
 	port := canonicalizeHostPort(*portFlag)
 	if *outputFlag == "" {
 		*outputFlag = filepath.Join(*dirFlag, "incoming")
+	}
+	// Ensure output directory exists.
+	if err := os.MkdirAll(*outputFlag, 0o755); err != nil {
+		log.Panicf("Failed to create output directory %s: %v", *outputFlag, err)
 	}
 	remoteAEs, err := parseRemoteAEFlag(*remoteAEFlag)
 	if err != nil {

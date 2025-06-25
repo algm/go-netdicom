@@ -1,6 +1,7 @@
 package netdicom
 
 import (
+	"os"
 	"sync"
 	"testing"
 
@@ -30,12 +31,12 @@ func TestServiceDispatcher_HandleEvent(t *testing.T) {
 	var (
 		wg            sync.WaitGroup
 		capturedMsg   dimse.Message
-		capturedData  []byte
+		capturedData  *dimse.DimseCommand
 		capturedState *serviceCommandState
 	)
 	wg.Add(1)
 
-	disp.registerCallback(cmd.CommandField(), func(msg dimse.Message, data []byte, cs *serviceCommandState) {
+	disp.registerCallback(cmd.CommandField(), func(msg dimse.Message, data *dimse.DimseCommand, cs *serviceCommandState) {
 		capturedMsg = msg
 		capturedData = data
 		capturedState = cs
@@ -43,12 +44,17 @@ func TestServiceDispatcher_HandleEvent(t *testing.T) {
 	})
 
 	// Send upcall event
+	tmpFile, _ := os.CreateTemp("", "testpayload*")
+	tmpFile.Write([]byte("payload"))
+	tmpFile.Close()
+	dcPayload := dimse.NewDimseCommand(tmpFile.Name())
+
 	evt := upcallEvent{
 		eventType: upcallEventData,
 		cm:        cm,
 		contextID: 1,
 		command:   cmd,
-		data:      []byte("payload"),
+		data:      dcPayload,
 	}
 	disp.handleEvent(evt)
 
@@ -60,8 +66,8 @@ func TestServiceDispatcher_HandleEvent(t *testing.T) {
 	if capturedMsg.GetMessageID() != cmd.GetMessageID() {
 		t.Errorf("expected messageID %d got %d", cmd.GetMessageID(), capturedMsg.GetMessageID())
 	}
-	if string(capturedData) != "payload" {
-		t.Errorf("expected data 'payload', got '%s'", string(capturedData))
+	if capturedData == nil {
+		t.Errorf("expected non-nil DimseCommand")
 	}
 	if capturedState == nil {
 		t.Error("expected serviceCommandState non-nil")

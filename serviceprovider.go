@@ -3,7 +3,6 @@
 package netdicom
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -30,26 +29,20 @@ func handleCStore(
 	ctx context.Context,
 	params ServiceProviderParams,
 	connState ConnectionState,
-	c *dimse.CStoreRq, data []byte,
+	c *dimse.CStoreRq, data *dimse.DimseCommand,
 	cs *serviceCommandState) {
 	status := dimse.Status{Status: dimse.StatusUnrecognizedOperation}
 
 	if params.CStore != nil {
-		// Determine data reader and size
-		var dataReader io.Reader
-		var dataSize int64
+		// Determine data reader and size directly from DimseCommand
+		var (
+			dataReader io.Reader
+			dataSize   int64
+		)
 
-		if cs.streamingReader != nil {
-			// True streaming mode - data comes from network stream
-			dataReader = cs.streamingReader
-			dataSize = cs.streamingReader.Size()
-			if dataSize < 0 {
-				dataSize = int64(len(data)) // Fallback estimate
-			}
-		} else {
-			// Buffered mode - data is in memory
-			dataSize = int64(len(data))
-			dataReader = bytes.NewReader(data)
+		if data != nil {
+			dataReader = data
+			dataSize = data.Size()
 		}
 
 		status = params.CStore(
@@ -70,12 +63,17 @@ func handleCStore(
 		Status:                    status,
 	}
 	cs.sendMessage(resp, nil)
+
+	// Clean up temporary file associated with DimseCommand
+	if data != nil {
+		_ = data.Ack()
+	}
 }
 
 func handleCFind(
 	params ServiceProviderParams,
 	connState ConnectionState,
-	c *dimse.CFindRq, data []byte,
+	c *dimse.CFindRq, data *dimse.DimseCommand,
 	cs *serviceCommandState) {
 	if params.CFind == nil {
 		cs.sendMessage(&dimse.CFindRsp{
@@ -86,7 +84,11 @@ func handleCFind(
 		}, nil)
 		return
 	}
-	elems, err := readElementsInBytes(data, cs.context.transferSyntaxUID)
+	var payload []byte
+	if data != nil {
+		payload, _ = io.ReadAll(data)
+	}
+	elems, err := readElementsInBytes(payload, cs.context.transferSyntaxUID)
 	if err != nil {
 		cs.sendMessage(&dimse.CFindRsp{
 			AffectedSOPClassUID:       c.AffectedSOPClassUID,
@@ -136,12 +138,16 @@ func handleCFind(
 	// Drain the responses in case of errors
 	for range responseCh {
 	}
+
+	if data != nil {
+		_ = data.Ack()
+	}
 }
 
 func handleCMove(
 	params ServiceProviderParams,
 	connState ConnectionState,
-	c *dimse.CMoveRq, data []byte,
+	c *dimse.CMoveRq, data *dimse.DimseCommand,
 	cs *serviceCommandState) {
 	sendError := func(err error) {
 		cs.sendMessage(&dimse.CMoveRsp{
@@ -165,7 +171,11 @@ func handleCMove(
 		sendError(fmt.Errorf("C-MOVE destination '%v' not registered in the server", c.MoveDestination))
 		return
 	}
-	elems, err := readElementsInBytes(data, cs.context.transferSyntaxUID)
+	var payload []byte
+	if data != nil {
+		payload, _ = io.ReadAll(data)
+	}
+	elems, err := readElementsInBytes(payload, cs.context.transferSyntaxUID)
 	if err != nil {
 		sendError(err)
 		return
@@ -214,12 +224,16 @@ func handleCMove(
 	// Drain the responses in case of errors
 	for range responseCh {
 	}
+
+	if data != nil {
+		_ = data.Ack()
+	}
 }
 
 func handleCGet(
 	params ServiceProviderParams,
 	connState ConnectionState,
-	c *dimse.CGetRq, data []byte, cs *serviceCommandState) {
+	c *dimse.CGetRq, data *dimse.DimseCommand, cs *serviceCommandState) {
 	sendError := func(err error) {
 		cs.sendMessage(&dimse.CGetRsp{
 			AffectedSOPClassUID:       c.AffectedSOPClassUID,
@@ -237,7 +251,11 @@ func handleCGet(
 		}, nil)
 		return
 	}
-	elems, err := readElementsInBytes(data, cs.context.transferSyntaxUID)
+	var payload []byte
+	if data != nil {
+		payload, _ = io.ReadAll(data)
+	}
+	elems, err := readElementsInBytes(payload, cs.context.transferSyntaxUID)
 	if err != nil {
 		sendError(err)
 		return
@@ -294,12 +312,16 @@ func handleCGet(
 	// Drain the responses in case of errors
 	for range responseCh {
 	}
+
+	if data != nil {
+		_ = data.Ack()
+	}
 }
 
 func handleCEcho(
 	params ServiceProviderParams,
 	connState ConnectionState,
-	c *dimse.CEchoRq, data []byte,
+	c *dimse.CEchoRq, data *dimse.DimseCommand,
 	cs *serviceCommandState) {
 	status := dimse.Status{Status: dimse.StatusUnrecognizedOperation}
 	if params.CEcho != nil {
@@ -312,6 +334,10 @@ func handleCEcho(
 		Status:                    status,
 	}
 	cs.sendMessage(resp, nil)
+
+	if data != nil {
+		_ = data.Ack()
+	}
 }
 
 // ServiceProviderParams defines parameters for ServiceProvider.
@@ -531,23 +557,23 @@ func RunProviderForConn(ctx context.Context, conn net.Conn, params ServiceProvid
 	label := newUID("sc")
 	disp := newServiceDispatcher(label)
 	disp.registerCallback(dimse.CommandFieldCStoreRq,
-		func(msg dimse.Message, data []byte, cs *serviceCommandState) {
+		func(msg dimse.Message, data *dimse.DimseCommand, cs *serviceCommandState) {
 			handleCStore(ctx, params, getConnState(conn), msg.(*dimse.CStoreRq), data, cs)
 		})
 	disp.registerCallback(dimse.CommandFieldCFindRq,
-		func(msg dimse.Message, data []byte, cs *serviceCommandState) {
+		func(msg dimse.Message, data *dimse.DimseCommand, cs *serviceCommandState) {
 			handleCFind(params, getConnState(conn), msg.(*dimse.CFindRq), data, cs)
 		})
 	disp.registerCallback(dimse.CommandFieldCMoveRq,
-		func(msg dimse.Message, data []byte, cs *serviceCommandState) {
+		func(msg dimse.Message, data *dimse.DimseCommand, cs *serviceCommandState) {
 			handleCMove(params, getConnState(conn), msg.(*dimse.CMoveRq), data, cs)
 		})
 	disp.registerCallback(dimse.CommandFieldCGetRq,
-		func(msg dimse.Message, data []byte, cs *serviceCommandState) {
+		func(msg dimse.Message, data *dimse.DimseCommand, cs *serviceCommandState) {
 			handleCGet(params, getConnState(conn), msg.(*dimse.CGetRq), data, cs)
 		})
 	disp.registerCallback(dimse.CommandFieldCEchoRq,
-		func(msg dimse.Message, data []byte, cs *serviceCommandState) {
+		func(msg dimse.Message, data *dimse.DimseCommand, cs *serviceCommandState) {
 			handleCEcho(params, getConnState(conn), msg.(*dimse.CEchoRq), data, cs)
 		})
 	go runStateMachineForServiceProvider(conn, upcallCh, disp.downcallCh, label)

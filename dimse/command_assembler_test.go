@@ -2,6 +2,7 @@ package dimse
 
 import (
 	"bytes"
+	"io"
 	"testing"
 
 	"github.com/mlibanori/go-netdicom/commandset"
@@ -43,16 +44,16 @@ func TestCommandAssembler(t *testing.T) {
 		assembler := &CommandAssembler{}
 
 		pdu1 := createPDataTf(1, true, true, commandBytes)
-		contextID, msg, data, err := assembler.AddDataPDU(pdu1)
+		contextID, msg, dc, err := assembler.AddDataPDU(pdu1)
 		if err != nil {
 			t.Fatalf("Command PDU failed: %v", err)
 		}
-		if contextID != 0 || msg != nil || data != nil {
+		if contextID != 0 || msg != nil || dc != nil {
 			t.Error("Expected incomplete assembly after command only")
 		}
 
 		pdu2 := createPDataTf(1, false, true, testData)
-		contextID, msg, data, err = assembler.AddDataPDU(pdu2)
+		contextID, msg, dc, err = assembler.AddDataPDU(pdu2)
 		if err != nil {
 			t.Fatalf("Data PDU failed: %v", err)
 		}
@@ -62,8 +63,13 @@ func TestCommandAssembler(t *testing.T) {
 		if msg == nil {
 			t.Fatal("Expected message, got nil")
 		}
-		if string(data) != string(testData) {
-			t.Errorf("Expected data %s, got %s", string(testData), string(data))
+		if dc == nil {
+			t.Fatal("Expected DimseCommand, got nil")
+		}
+		b, _ := io.ReadAll(dc.ReadData())
+		dc.Ack()
+		if string(b) != string(testData) {
+			t.Errorf("Expected data %s, got %s", string(testData), string(b))
 		}
 	})
 
@@ -76,25 +82,25 @@ func TestCommandAssembler(t *testing.T) {
 		assembler := &CommandAssembler{}
 
 		pdu1 := createPDataTf(1, true, true, commandBytes)
-		contextID, msg, data, err := assembler.AddDataPDU(pdu1)
+		contextID, msg, dc, err := assembler.AddDataPDU(pdu1)
 		if err != nil {
 			t.Fatalf("Command PDU failed: %v", err)
 		}
-		if contextID != 0 || msg != nil || data != nil {
+		if contextID != 0 || msg != nil || dc != nil {
 			t.Error("Expected incomplete assembly after command only")
 		}
 
 		pdu2 := createPDataTf(1, false, false, dataFragment1)
-		contextID, msg, data, err = assembler.AddDataPDU(pdu2)
+		contextID, msg, dc, err = assembler.AddDataPDU(pdu2)
 		if err != nil {
 			t.Fatalf("First data fragment failed: %v", err)
 		}
-		if contextID != 0 || msg != nil || data != nil {
+		if contextID != 0 || msg != nil || dc != nil {
 			t.Error("Expected incomplete assembly after first data fragment")
 		}
 
 		pdu3 := createPDataTf(1, false, true, dataFragment2)
-		contextID, msg, data, err = assembler.AddDataPDU(pdu3)
+		contextID, msg, dc, err = assembler.AddDataPDU(pdu3)
 		if err != nil {
 			t.Fatalf("Second data fragment failed: %v", err)
 		}
@@ -104,8 +110,13 @@ func TestCommandAssembler(t *testing.T) {
 		if msg == nil {
 			t.Fatal("Expected message, got nil")
 		}
-		if string(data) != string(testData) {
-			t.Errorf("Expected data %s, got %s", string(testData), string(data))
+		if dc == nil {
+			t.Fatal("Expected DimseCommand, got nil")
+		}
+		b, _ := io.ReadAll(dc.ReadData())
+		dc.Ack()
+		if string(b) != string(testData) {
+			t.Errorf("Expected data %s, got %s", string(testData), string(b))
 		}
 	})
 

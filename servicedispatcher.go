@@ -28,7 +28,7 @@ type serviceDispatcher struct {
 	lastMessageID dimse.MessageID
 }
 
-type serviceCallback func(msg dimse.Message, data []byte, cs *serviceCommandState)
+type serviceCallback func(msg dimse.Message, data *dimse.DimseCommand, cs *serviceCommandState)
 
 // Per-DIMSE-command state.
 type serviceCommandState struct {
@@ -120,6 +120,9 @@ func (disp *serviceDispatcher) deleteCommand(cs *serviceCommandState) {
 	}
 	delete(disp.activeCommands, cs.messageID)
 	disp.mu.Unlock()
+	if cs.streamingReader != nil {
+		cs.streamingReader.Ack()
+	}
 }
 
 func (disp *serviceDispatcher) registerCallback(commandField uint16, cb serviceCallback) {
@@ -158,8 +161,8 @@ func (disp *serviceDispatcher) handleEvent(event upcallEvent) {
 	cb := disp.callbacks[event.command.CommandField()]
 	disp.mu.Unlock()
 	go func() {
-
-		// Always call with data - handleCStore will check for streaming reader
+		// Attach streaming reader to command state for handlers needing io.Reader
+		dc.streamingReader = event.data
 		cb(event.command, event.data, dc)
 		disp.deleteCommand(dc)
 	}()

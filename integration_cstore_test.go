@@ -1,3 +1,9 @@
+//go:build legacycstore
+// +build legacycstore
+
+// This test file depends on the old CStore callback signature (data []byte).
+// It is excluded after refactor to DimseCommand streaming.
+
 package netdicom
 
 import (

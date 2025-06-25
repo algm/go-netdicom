@@ -317,16 +317,15 @@ var actionDt1 = &stateAction{"DT-1", "Send P-DATA-TF PDU",
 
 var actionDt2 = &stateAction{"DT-2", "Send P-DATA indication primitive",
 	func(sm *stateMachine, event stateEvent) stateType {
-		contextID, command, data, err := sm.commandAssembler.AddDataPDU(event.pdu.(*pdu.PDataTf))
+		contextID, command, dataCmd, err := sm.commandAssembler.AddDataPDU(event.pdu.(*pdu.PDataTf))
 		if err == nil {
-			if command != nil { // All fragments received
-				dicomlog.Vprintf(1, "dicom.stateMachine(%s): DIMSE request: %v", sm.label, command)
+			if command != nil {
 				sm.upcallCh <- upcallEvent{
 					eventType: upcallEventData,
 					cm:        sm.contextManager,
 					contextID: contextID,
 					command:   command,
-					data:      data}
+					data:      dataCmd}
 			}
 			return sta06
 		}
@@ -511,7 +510,7 @@ type upcallEvent struct {
 	contextID byte
 
 	command dimse.Message
-	data    []byte
+	data    *dimse.DimseCommand
 }
 
 type stateEventDIMSEPayload struct {

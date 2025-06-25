@@ -64,31 +64,36 @@ func (dc *DimseCommand) Close() error {
 }
 
 func (dc *DimseCommand) ReadData() io.Reader {
-	dc.mu.RLock()
-	defer dc.mu.RUnlock()
+	dc.mu.Lock()
+	defer dc.mu.Unlock()
 
 	if dc.dataReader == nil {
 		f, err := os.Open(dc.fpath)
 		if err != nil {
 			return nil
 		}
-
 		dc.dataReader = f
 	}
-
+	// Reset cursor for a fresh read.
 	if _, err := dc.dataReader.Seek(0, io.SeekStart); err != nil {
 		return nil
 	}
-
 	return dc.dataReader
 }
 
 // Read implements io.Reader by delegating to an internal *os.File reader.
 func (dc *DimseCommand) Read(p []byte) (int, error) {
-	r := dc.ReadData()
-	if r == nil {
-		return 0, io.EOF
+	dc.mu.Lock()
+	if dc.dataReader == nil {
+		f, err := os.Open(dc.fpath)
+		if err != nil {
+			dc.mu.Unlock()
+			return 0, err
+		}
+		dc.dataReader = f
 	}
+	r := dc.dataReader
+	dc.mu.Unlock()
 	return r.Read(p)
 }
 

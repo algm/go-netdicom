@@ -6,6 +6,7 @@ package netdicom
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"sync"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/grailbio/go-dicom/dicomlog"
 	"github.com/grailbio/go-dicom/dicomtag"
 	"github.com/grailbio/go-dicom/dicomuid"
+	"github.com/mlibanori/go-netdicom/commandset"
 	"github.com/mlibanori/go-netdicom/dimse"
 )
 
@@ -103,6 +105,8 @@ func validateServiceUserParams(params *ServiceUserParams) error {
 // NewServiceUser creates a new ServiceUser. The caller must call either
 // Connect() or SetConn() before calling any other method, such as Cstore.
 func NewServiceUser(params ServiceUserParams) (*ServiceUser, error) {
+	// Ensure commandset tag dictionary initialized
+	commandset.Init()
 	if err := validateServiceUserParams(&params); err != nil {
 		return nil, err
 	}
@@ -387,12 +391,19 @@ func (su *ServiceUser) CFind(qrLevel QRLevel, filter []*dicom.Element) chan CFin
 				ch <- CFindResult{Err: fmt.Errorf("Found wrong response for C-FIND: %v", event.command)}
 				break
 			}
-			elems, err := readElementsInBytes(event.data, context.transferSyntaxUID)
+			var payload []byte
+			if event.data != nil {
+				payload, _ = io.ReadAll(event.data)
+			}
+			elems, err := readElementsInBytes(payload, context.transferSyntaxUID)
 			if err != nil {
 				dicomlog.Vprintf(0, "dicom.serviceUser: Failed to decode C-FIND response: %v %v", resp.String(), err)
 				ch <- CFindResult{Err: err}
 			} else {
 				ch <- CFindResult{Elements: elems}
+			}
+			if event.data != nil {
+				_ = event.data.Ack()
 			}
 			if resp.Status.Status != dimse.StatusPending {
 				if resp.Status.Status != 0 {
@@ -431,13 +442,21 @@ func (su *ServiceUser) CGet(qrLevel QRLevel, filter []*dicom.Element,
 	}
 	defer su.disp.deleteCommand(cs)
 
-	handleCStore := func(msg dimse.Message, data []byte, cs *serviceCommandState) {
+	handleCStore := func(msg dimse.Message, data *dimse.DimseCommand, cs *serviceCommandState) {
 		c := msg.(*dimse.CStoreRq)
+		var payload []byte
+		if data != nil {
+			var _err error
+			payload, _err = io.ReadAll(data)
+			if _err != nil {
+				payload = nil
+			}
+		}
 		status := cb(
 			context.transferSyntaxUID,
 			c.AffectedSOPClassUID,
 			c.AffectedSOPInstanceUID,
-			data)
+			payload)
 		resp := &dimse.CStoreRsp{
 			AffectedSOPClassUID:       c.AffectedSOPClassUID,
 			MessageIDBeingRespondedTo: c.MessageID,
@@ -446,6 +465,10 @@ func (su *ServiceUser) CGet(qrLevel QRLevel, filter []*dicom.Element,
 			Status:                    status,
 		}
 		cs.sendMessage(resp, nil)
+
+		if data != nil {
+			_ = data.Ack()
+		}
 	}
 	su.disp.registerCallback(dimse.CommandFieldCStoreRq, handleCStore)
 	defer su.disp.unregisterCallback(dimse.CommandFieldCStoreRq)
