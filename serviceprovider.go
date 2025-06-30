@@ -380,6 +380,8 @@ type ServiceProviderParams struct {
 	// https://gist.github.com/michaljemala/d6f4e01c4834bf47a9c4 for an
 	// example for creating a TLS config from x509 cert files.
 	TLSConfig *tls.Config
+
+	Verbose bool
 }
 
 // DefaultMaxPDUSize is the the PDU size advertized by go-netdicom.
@@ -525,7 +527,12 @@ func runCStoreOnNewAssociation(myAETitle, remoteAETitle, remoteHostPort string, 
 // IP address that this machine can bind to.  Run() will actually start running
 // the service.
 func NewServiceProvider(params ServiceProviderParams, port string) (*ServiceProvider, error) {
-	dicomlog.SetLevel(0)
+	dicomlog.SetLevel(-1)
+
+	if params.Verbose {
+		dicomlog.SetLevel(0)
+	}
+
 	sp := &ServiceProvider{
 		params: params,
 		label:  newUID("sp"),
