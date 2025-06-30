@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mlibanori/go-netdicom/pdu"
+	"github.com/algm/go-netdicom/pdu"
 	"github.com/suyashkumar/dicom"
 )
 

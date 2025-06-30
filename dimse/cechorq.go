@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/mlibanori/go-netdicom/commandset"
+	"github.com/algm/go-netdicom/commandset"
 	"github.com/suyashkumar/dicom"
 )
 

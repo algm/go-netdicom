@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/algm/go-netdicom/dimse"
+	"github.com/algm/go-netdicom/sopclass"
 	"github.com/grailbio/go-dicom"
-	"github.com/mlibanori/go-netdicom/dimse"
-	"github.com/mlibanori/go-netdicom/sopclass"
 	"github.com/stretchr/testify/require"
 )
 

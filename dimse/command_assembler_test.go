@@ -5,8 +5,8 @@ import (
 	"io"
 	"testing"
 
-	"github.com/mlibanori/go-netdicom/commandset"
-	"github.com/mlibanori/go-netdicom/pdu"
+	"github.com/algm/go-netdicom/commandset"
+	"github.com/algm/go-netdicom/pdu"
 )
 
 func createValidCStoreRqBytes() []byte {

@@ -3,8 +3,8 @@ package fuzzpdu
 import (
 	"bytes"
 
-	"github.com/mlibanori/go-netdicom/dimse"
-	"github.com/mlibanori/go-netdicom/pdu"
+	"github.com/algm/go-netdicom/dimse"
+	"github.com/algm/go-netdicom/pdu"
 	"github.com/suyashkumar/dicom"
 )
 

@@ -1,9 +1,8 @@
-module github.com/mlibanori/go-netdicom
+module github.com/algm/go-netdicom
 
 go 1.23.8
 
 require (
-	github.com/google/go-cmp v0.6.0
 	github.com/grailbio/go-dicom v0.0.0-20211105193521-b0e216a1c5cd
 	github.com/stretchr/testify v1.10.0
 	github.com/suyashkumar/dicom v1.0.8-0.20250219044612-0fbaef53037e

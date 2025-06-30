@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/mlibanori/go-netdicom/dimse"
+	"github.com/algm/go-netdicom/dimse"
 )
 
 // Dummy callback to capture invocation parameters

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/mlibanori/go-netdicom/dimse"
+	"github.com/algm/go-netdicom/dimse"
 	"github.com/stretchr/testify/assert"
 	"github.com/suyashkumar/dicom"
 )
